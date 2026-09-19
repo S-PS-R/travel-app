@@ -3,7 +3,7 @@ import { View, Text, Pressable } from "react-native";
 import maplibregl, { type GeoJSONSource, type Map as MapInstance } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./map.css";
-import { geoInterpolate } from "d3-geo";
+import { routeSegments, routePoints, routeBounds, globeRouteCenter } from "./routeGeometry";
 import { countryData, continents } from "./mapData";
 import { isVisited, placeKey, type Place } from "./model";
 import { transports } from "./plannerModel";
@@ -24,6 +24,9 @@ export default function WorldMap(props: WorldMapProps) {
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [picked, setPicked] = useState<Place | null>(null);
+  const [fitMessage,setFitMessage]=useState("");
+  const [fitting,setFitting]=useState(false);
+  const fitRequest=useRef(0);
   const [hover, setHover] = useState<{ name: string; x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -33,7 +36,7 @@ export default function WorldMap(props: WorldMapProps) {
     try {
       m = new maplibregl.Map({ container: host.current, style: "https://tiles.openfreemap.org/styles/dark",
         center: props.planner ? [-22, 28] : [12, 22], zoom: props.planner ? 1.5 : 1.4,
-        minZoom: 0.5, maxZoom: 17, attributionControl: { compact: true }, canvasContextAttributes: { antialias: true } });
+        minZoom: -3, maxZoom: 17, attributionControl: { compact: true }, canvasContextAttributes: { antialias: true } });
     } catch { setError("This browser could not start the interactive map. Try a browser with WebGL enabled."); return; }
     map.current = m;
     m.addControl(new maplibregl.NavigationControl({ showCompass: true }), "top-right");
@@ -98,7 +101,7 @@ export default function WorldMap(props: WorldMapProps) {
       setReady(true);
     });
     const resize = new ResizeObserver(() => m.resize()); resize.observe(host.current);
-    return () => { clearTimeout(timer); resize.disconnect(); m.remove(); map.current = null; };
+    return () => { fitRequest.current++;clearTimeout(timer); resize.disconnect(); m.remove(); map.current = null; };
   }, [attempt]);
 
   useEffect(() => {
@@ -112,16 +115,11 @@ export default function WorldMap(props: WorldMapProps) {
     (m.getSource("veyfar-pins") as GeoJSONSource).setData(pins);
     const lines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const badges: maplibregl.Marker[] = [];
+    const segments=routeSegments(props.route??[]);
     (props.route ?? []).forEach((st, i, arr) => {
       if (!i) return;
       const a = arr[i-1].place, b = st.place;
-      const interpolate = geoInterpolate([a.lon, a.lat], [b.lon, b.lat]);
-      const coords = Array.from({length: 81}, (_, j) => interpolate(j/80));
-      // Unwrap longitudes so a Pacific crossing takes the short way across the dateline.
-      for (let j=1; j<coords.length; j++) {
-        while (coords[j][0]-coords[j-1][0]>180) coords[j][0]-=360;
-        while (coords[j][0]-coords[j-1][0]<-180) coords[j][0]+=360;
-      }
+      const coords = segments[i-1];
       lines.push({ type: "Feature", properties: { color: transports[st.mode].color }, geometry: { type: "LineString", coordinates: coords } });
       const badge = document.createElement("div");
       badge.className = "veyfar-transport";
@@ -129,7 +127,7 @@ export default function WorldMap(props: WorldMapProps) {
       badge.title = `${transports[st.mode].label}: ${a.city} to ${b.city}`;
       badge.setAttribute("aria-label", badge.title);
       badge.style.borderColor = transports[st.mode].color;
-      badges.push(new maplibregl.Marker({element:badge}).setLngLat(interpolate(0.5) as [number,number]).addTo(m));
+      badges.push(new maplibregl.Marker({element:badge}).setLngLat(coords[Math.floor(coords.length/2)]).addTo(m));
     });
     (m.getSource("veyfar-route") as GeoJSONSource).setData({ type: "FeatureCollection", features: lines });
     const ids = props.trips.flatMap(t => t.stops.filter(isVisited).map(st => st.place.countryId.padStart(3,"0")));
@@ -146,13 +144,44 @@ export default function WorldMap(props: WorldMapProps) {
   function focusContinent(c: typeof continents[number]) {
     setRegion(c.name); setPicked(null); map.current?.flyTo({ center: [...c.center], zoom: c.zoom, duration: 1000 });
   }
-  function fitRoute() {
+  async function fitRoute() {
     const stops = latest.current.route ?? [];
-    if (!stops.length) return;
-    const bounds = new maplibregl.LngLatBounds();
-    let previous = stops[0].place.lon;
-    stops.forEach(({place}) => { let lon=place.lon; while(lon-previous>180)lon-=360;while(lon-previous< -180)lon+=360; bounds.extend([lon,place.lat]);previous=lon; });
-    map.current?.fitBounds(bounds, { padding: 90, maxZoom: 5, duration: 1000 });
+    const m=map.current;if(!m||!ready||!stops.length)return;
+    const request=++fitRequest.current;
+    const points=routePoints(stops),bounds=routeBounds(points);
+    const width=m.getContainer().clientWidth,height=m.getContainer().clientHeight;
+    const padding=Math.min(80,Math.max(32,Math.min(width,height)*0.14));
+    const frame=()=>new Promise<void>(resolve=>{m.once("render",()=>resolve());m.triggerRepaint();});
+    const current=()=>map.current===m&&request===fitRequest.current;
+    const visible=(onGlobe:boolean)=>{
+      return points.every(([lon,lat])=>{
+        const location=new maplibregl.LngLat(lon,onGlobe?lat:Math.max(-85.05112878,Math.min(85.05112878,lat)));
+        // Projection-aware occlusion also catches arcs behind the globe's horizon.
+        if(onGlobe&&m.transform.isLocationOccluded(location))return false;
+        const p=m.project(location);
+        return Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=padding&&p.x<=width-padding&&p.y>=padding&&p.y<=height-padding;
+      });
+    }
+    setFitting(true);setFitMessage("");setPicked(null);setHover(null);m.stop();
+    try {
+      if(globe) {
+        const center=globeRouteCenter(points);
+        const camera=m.cameraForBounds(bounds,{padding,maxZoom:5,bearing:0});
+        m.jumpTo({center,zoom:Math.min(5,camera?.zoom??1),pitch:0,bearing:0,padding:{top:0,bottom:0,left:0,right:0}});
+        await frame();
+        while(current()&&!visible(true)&&m.getZoom()>-3) {m.jumpTo({zoom:Math.max(-3,m.getZoom()-0.35)});await frame();}
+        if(!current())return;
+        if(visible(true))return;
+        // No camera can expose both sides of Earth at once. Use the full map
+        // for itineraries whose connections cannot fit on a visible hemisphere.
+        setGlobe(false);m.setProjection({type:"mercator"});await frame();
+        if(!current())return;
+        setFitMessage("Showing the full route on the flat map because it wraps around the globe.");
+      }
+      m.jumpTo({pitch:0,bearing:0,padding:{top:0,bottom:0,left:0,right:0}});
+      m.fitBounds(bounds,{padding,maxZoom:5,animate:false});await frame();
+      while(current()&&!visible(false)&&m.getZoom()>-3) {m.jumpTo({zoom:Math.max(-3,m.getZoom()-0.2)});await frame();}
+    } finally {if(current())setFitting(false);}
   }
   return <View style={{ borderRadius: 22, overflow: "hidden", backgroundColor: "#07162e", borderWidth: 1, borderColor: "#294153" }}>
     <View style={{ padding: 20, flexDirection: "row", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -160,7 +189,7 @@ export default function WorldMap(props: WorldMapProps) {
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
         <Pressable accessibilityRole="button" onPress={() => setGlobe(!globe)} style={chip}><Text style={chipText}>{globe ? "◉ Globe" : "▱ Map"} · switch</Text></Pressable>
         <Pressable accessibilityRole="button" onPress={() => { setRegion("World"); setPicked(null); map.current?.flyTo({center: [12,22],zoom: 1.4,pitch:0,bearing:0}); }} style={chip}><Text style={chipText}>Reset</Text></Pressable>
-        {props.planner && <Pressable accessibilityRole="button" onPress={fitRoute} style={chip}><Text style={chipText}>Fit route</Text></Pressable>}
+        {props.planner && <Pressable accessibilityRole="button" disabled={!ready||fitting||!props.route?.length} onPress={fitRoute} style={chip}><Text style={chipText}>{fitting?"Fitting…":"Fit route"}</Text></Pressable>}
       </View>
     </View>
     <View style={{ position: "relative", backgroundColor: "#000000" }}>
@@ -178,6 +207,7 @@ export default function WorldMap(props: WorldMapProps) {
       {!!error && <View style={{position:"absolute",top:20,left:20,right:20,backgroundColor:"#102c3b",padding:16,borderRadius:12}}><Text accessibilityRole="alert" style={{color:"white"}}>{error}</Text><Pressable onPress={()=>{setError("");setGlobe(!!props.planner);setAttempt(a=>a+1);}}><Text style={{color:"#8de0d1",paddingTop:10}}>Retry map</Text></Pressable></View>}
     </View>
     <View style={{padding:16,gap:12}}>
+      {!!fitMessage&&<Text accessibilityLiveRegion="polite" style={{color:"#b6d8de",fontSize:12}}>{fitMessage}</Text>}
       <View style={{flexDirection:"row",gap:8,flexWrap:"wrap"}}>{continents.map(c=><Pressable key={c.name} accessibilityRole="button" accessibilityLabel={`Explore ${c.name}`} onPress={()=>focusContinent(c)} style={[chip,region===c.name&&{backgroundColor:"#234d55",borderColor:"#78b9b4"}]}><Text style={chipText}><Text style={{color:c.color}}>● </Text>{c.name}</Text></Pressable>)}</View>
       <Text style={[s.muted,{color:"#91acba",fontSize:12}]}>{props.planner ? "Drag to rotate · scroll to zoom · click land to add a stop" : "Drag to pan · scroll to zoom · click a continent to explore"} · {zoom < 3 ? "World view" : zoom < 7 ? "Countries & cities" : "Local detail"}</Text>
     </View>

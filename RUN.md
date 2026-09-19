@@ -19,3 +19,6 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 stop
 The stop command only stops the process created by this script. If you previously started Expo directly, press **Ctrl+C** in that original terminal first. An occupied port is reported rather than stopping another application.
 
 The script finds Node.js on PATH or uses the bundled Codex runtime under your user directory. It starts Expo in offline mode (no Expo login required); online map tiles and account services still need internet access. Startup output is in `.expo/web-server.log` and `.expo/web-server-error.log`. Those files and the process record are ignored by Git.
+# Flight lookup
+
+The start/stop script also manages the local flight lookup server. See [flight setup and limitations](docs/FLIGHT-LOOKUP.md). The AirLabs key belongs only in ignored `.env.flight.local`.

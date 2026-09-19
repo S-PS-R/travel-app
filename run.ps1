@@ -1,6 +1,7 @@
 param([ValidateSet('start', 'stop')][string]$Action = 'start')
 
 $ErrorActionPreference = 'Stop'
+& (Join-Path $PSScriptRoot 'scripts\flight-host.ps1') -Action $Action
 $statePath = Join-Path $PSScriptRoot '.expo\web-server.json'
 $server = $null
 if (Test-Path -LiteralPath $statePath) {

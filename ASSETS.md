@@ -1,5 +1,7 @@
 # Asset sources
 
+- `assets/land.json`: Natural Earth 1:110m land polygons, public domain, used to restrict ground transport between disconnected land areas. Simplified coastlines are approximate. [Source](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_land.geojson).
+
 - Offline city autocomplete: [Natural Earth 1:50m populated places](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_50m_populated_places_simple.geojson), a public-domain dataset. `src/cityCatalog.ts` retains names, alternate names, coordinates, country identifiers and display rank for 1,251 places, combined with the existing curated destinations. Search runs on device without sending typed queries to a geocoding service. Geographic prominence ranks determine ordering after exact and prefix matches; this is not a live tourism popularity ranking.
 - Additional popular destinations (including Pokhara, Phuket and Udaipur): selected records from [Natural Earth 1:10m populated places](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_10m_populated_places_simple.geojson), also public domain.
 

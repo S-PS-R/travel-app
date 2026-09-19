@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, useWindowDimensions } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { places, uid, placeKey, type Place } from "./model";
-import { transports, emptyPlan, moveStop, distanceKm, type TravelPlan, type Transport } from "./plannerModel";
+import { transports, emptyPlan, distanceKm, connection, updateConnection, reorderPlanStops, removePlanStop, storedLegs, mapRoute, type TravelPlan } from "./plannerModel";
+import { availableTransports } from "./transportAvailability";
+import SortableStops from "./SortableStops";
+import TransportDetails from "./TransportDetails";
 import { PLAN_LIBRARY_KEY, LEGACY_PLAN_KEY, loadPlanLibrary, saveToLibrary, type PlanLibrary, type SavedPlan } from "./planLibrary";
 import DestinationInput from "./DestinationInput";
 import DateField from "./DateField";
@@ -24,6 +27,10 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [confirmClear, setConfirmClear] = useState(false);
+  const [dragging,setDragging]=useState(false);
+  const [detailsOpen,setDetailsOpen]=useState<string|null>(null);
+  const [orderMessage,setOrderMessage]=useState("");
+  const route=useMemo(()=>mapRoute(plan),[plan]);
   useEffect(() => {
     let alive = true;
     AsyncStorage.getItem(PLAN_LIBRARY_KEY).then(async raw => {
@@ -68,6 +75,11 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
   }
   const total = plan.stops.reduce((sum, st, i, all) => sum+(i ? distanceKm(all[i-1].place,st.place) : 0),0);
   const editable = ready && !failed && !busy;
+  function reorder(fromId:string,toId:string) {
+    if(!editable)return;
+    const next=reorderPlanStops(plan,fromId,toId);if(next===plan)return;
+    change(next);setOrderMessage(`${next.stops.find(s=>s.id===fromId)?.place.city} moved to stop ${next.stops.findIndex(s=>s.id===fromId)+1}.`);
+  }
   const discardPrompt = pending&&<View style={[s.card,{gap:12}]}><Text style={s.body}>Your current plan has unsaved changes. Discard them to open {pending==="new"?"a new journey":pending.title}?</Text><Button danger disabled={busy} onPress={()=>openPlan(pending)}>Discard changes and continue</Button><Button quiet onPress={()=>setPending(null)}>Keep editing</Button></View>;
   if(view==="upcoming")return <ScrollView contentContainerStyle={{padding:compact?20:36,gap:24,maxWidth:1300,width:"100%",alignSelf:"center",paddingBottom:60}}>
     <View style={[s.spread,{flexWrap:"wrap"}]}><View style={{gap:8}}><Text style={s.eyebrow}>SOMETHING TO LOOK FORWARD TO</Text><Text accessibilityRole="header" style={s.title}>Upcoming trips</Text><Text style={s.muted}>Your saved plans, ready to revisit. Dates can stay undecided. Stored on this device.</Text></View><Button disabled={!editable} onPress={()=>requestOpen("new")}>＋ Plan a new trip</Button></View>
@@ -79,11 +91,12 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
     {library.plans.map(saved=><View key={saved.id} style={[s.card,{gap:14}]}>
       <Text style={s.subtitle}>{saved.title}</Text><Text style={s.muted}>{saved.startDate||"Start date undecided"} → {saved.endDate||"End date undecided"}</Text>
       <Text style={s.body}>{saved.stops.map(st=>st.place.city).join(" → ")}</Text><Text style={s.muted}>{saved.stops.length} stops · {Math.round(saved.stops.reduce((sum,st,i,all)=>sum+(i?distanceKm(all[i-1].place,st.place):0),0)).toLocaleString()} km direct</Text>
+      {saved.stops.slice(1).map((stop,i)=>{const leg=connection(saved,saved.stops[i].id,stop.id),details=leg.details?.[leg.mode];return details?.serviceNumber||leg.flight?<Text key={stop.id} style={s.muted}>{saved.stops[i].place.city} → {stop.place.city} · {transports[leg.mode].label} {details?.serviceNumber||""} · {details?.departureDate||"Date undecided"}{leg.mode==="flight"&&leg.flight?` · ${leg.flight.departureAirport} → ${leg.flight.arrivalAirport}`:""}</Text>:null;})}
       <View style={[s.row,{flexWrap:"wrap"}]}><Button disabled={!editable} onPress={()=>requestOpen(saved)}>Edit {saved.title}</Button><Button quiet disabled={!editable} onPress={()=>setDeleteId(saved.id)}>Remove plan</Button></View>
       {deleteId===saved.id&&<><Text style={s.error}>Remove this saved plan{saved.id===editingId&&dirty?" and its unsaved changes":""}? This cannot be undone.</Text><Button danger disabled={!editable} onPress={()=>removePlan(saved.id)}>Remove permanently</Button><Button quiet onPress={()=>setDeleteId(null)}>Keep plan</Button></>}
     </View>)}
   </ScrollView>;
-  return <ScrollView contentContainerStyle={{padding:compact?20:36,gap:24,maxWidth:1600,width:"100%",alignSelf:"center",paddingBottom:60}} keyboardShouldPersistTaps="handled">
+  return <ScrollView scrollEnabled={!dragging} contentContainerStyle={{padding:compact?20:36,gap:24,maxWidth:1600,width:"100%",alignSelf:"center",paddingBottom:60}} keyboardShouldPersistTaps="handled">
     <View style={[s.spread,{flexWrap:"wrap"}]}>
       <View style={{gap:8}}><Text style={s.eyebrow}>GO WHERE CURIOSITY TAKES YOU</Text><Text accessibilityRole="header" style={s.title}>A journey taking shape.</Text><Text style={s.muted}>Connect the places. Choose how you get there.</Text></View>
       <View style={[s.row,{flexWrap:"wrap"}]}><Text style={s.muted}>{!ready?"Opening plan…":dirty?"Unsaved changes":editingId?"Saved on this device":"New plan"}</Text><Button disabled={!editable||!dirty} onPress={save}>{busy?"Saving…":"Save plan"}</Button><Button quiet disabled={!editable} onPress={()=>requestOpen("new")}>New plan</Button><Button quiet onPress={()=>onNavigate("upcoming")}>View upcoming trips</Button></View>
@@ -91,7 +104,7 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
     {!!message&&<Text accessibilityRole="alert" style={failed?s.error:s.muted}>{message}</Text>}
     {discardPrompt}
     <View style={{flexDirection:compact?"column":"row",gap:24,alignItems:"stretch"}}>
-      <View style={{flex:1,minWidth:0}}><WorldMap trips={[]} planner route={plan.stops} selected={selected} onSelect={p=>setSelected(placeKey(p))} onAddPlace={editable?add:undefined}/></View>
+      <View style={{flex:1,minWidth:0}}><WorldMap trips={[]} planner route={route} selected={selected} onSelect={p=>setSelected(placeKey(p))} onAddPlace={editable?add:undefined}/></View>
       <View style={[s.card,{width:compact?"100%":350,gap:18}]}>
         <Text style={s.eyebrow}>YOUR ITINERARY</Text>
         <Field label="Journey name" maxLength={120} editable={editable} value={plan.title} onChangeText={title=>change({...plan,title})}/>
@@ -100,7 +113,7 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
         <View style={[s.row,{gap:24}]}><View><Text style={s.subtitle}>{plan.stops.length}</Text><Text style={s.muted}>stops</Text></View><View><Text style={s.subtitle}>{Math.round(total).toLocaleString()} km</Text><Text style={s.muted}>direct distance</Text></View></View>
         <DestinationInput label="Find a destination" disabled={!editable||plan.stops.length>=50} onSelect={add}/>
         {!plan.stops.length&&<View style={{gap:12}}><Text style={s.muted}>Start with a city above, or click anywhere on land. Each new stop gets its own transport choice.</Text><Button quiet disabled={!editable} onPress={()=>{change({title:"Across the Atlantic",stops:["New York","London","Paris","Rome"].map((city,i)=>({id:uid(),place:places.find(p=>p.city===city)!,mode:i===2?"train":"flight"}))});}}>Try a sample route</Button></View>}
-        {!!plan.stops.length&&<Text style={s.muted}>Choose transport on each arrival leg. Drag the globe to explore, or use Fit route to see your journey.</Text>}
+        {!!plan.stops.length&&<Text style={s.muted}>Choose onward transport and add details under the stop you depart from. Use Fit route to see the entire journey.</Text>}
         {plan.stops.length>=50&&<Text style={s.muted}>This plan has reached its 50-stop limit.</Text>}
         <Text style={[s.muted,{fontSize:12}]}>Route lines and distances are geographic previews. They do not check roads, service availability, fares, or travel times.</Text>
       </View>
@@ -108,13 +121,29 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
     {!!plan.stops.length&&<>
       <View style={s.spread}><Text style={s.subtitle}>One stop leads to another.</Text><Button quiet disabled={!editable} onPress={()=>setConfirmClear(!confirmClear)}>Clear plan</Button></View>
       {confirmClear&&<View style={[s.card,s.spread,{flexWrap:"wrap"}]}><Text style={s.body}>Clear all stops from this draft?</Text><Button danger disabled={!editable} onPress={()=>{change(emptyPlan());setSelected(null);setConfirmClear(false);}}>Clear draft</Button><Button quiet onPress={()=>setConfirmClear(false)}>Keep plan</Button></View>}
-      <View style={{flexDirection:"row",flexWrap:"wrap",gap:16}}>{plan.stops.map((stop,i)=><View key={stop.id} style={[s.card,{width:compact?"100%":"31.9%",minWidth:compact?0:280,borderColor:selected===placeKey(stop.place)?colors.teal:colors.line}]}>
-        <View style={s.spread}><Text style={s.eyebrow}>{i===0?"START HERE":`STOP ${String(i+1).padStart(2,"0")}`}</Text><View style={{flexDirection:"row",gap:6}}><Button quiet disabled={!editable||i===0} onPress={()=>change({...plan,stops:moveStop(plan.stops,i,-1)})}>←</Button><Button quiet disabled={!editable||i===plan.stops.length-1} onPress={()=>change({...plan,stops:moveStop(plan.stops,i,1)})}>→</Button></View></View>
+      <Text style={s.muted}>Drag a card by its ⠿ handle onto another stop to change the order. You can also use the arrow buttons.</Text>
+      {!!orderMessage&&<Text accessibilityLiveRegion="polite" style={s.muted}>{orderMessage}</Text>}
+      <SortableStops stops={plan.stops} compact={compact} disabled={!editable} onMove={reorder} onDragging={setDragging} renderStop={(stop,i,handle)=>{
+        const next=plan.stops[i+1];const leg=next?connection(plan,stop.id,next.id):null;
+        const modes=next?availableTransports(stop.place,next.place):[];
+        const savedConnections=storedLegs(plan).filter(l=>l.fromId===stop.id&&l.toId!==next?.id&&l.details&&Object.values(l.details).some(d=>Object.values(d??{}).some(Boolean)));
+        return <View style={[s.card,{borderColor:selected===placeKey(stop.place)?colors.teal:colors.line}]}>
+        <View style={[s.spread,{flexWrap:"wrap"}]}><Text style={s.eyebrow}>{i===0?"START HERE":`STOP ${String(i+1).padStart(2,"0")}`}</Text><View style={{flexDirection:"row",gap:6}}>{handle}<Button quiet disabled={!editable||i===0} onPress={()=>reorder(stop.id,plan.stops[i-1].id)}>←</Button><Button quiet disabled={!editable||i===plan.stops.length-1} onPress={()=>reorder(stop.id,plan.stops[i+1].id)}>→</Button></View></View>
         <Pressable accessibilityRole="button" accessibilityLabel={`Focus ${stop.place.city}`} onPress={()=>setSelected(placeKey(stop.place))}><Text style={s.subtitle}>{stop.place.city}</Text><Text style={s.muted}>{stop.place.country}</Text></Pressable>
         <Field label="Stop name" value={stop.place.city} maxLength={100} editable={editable} onChangeText={city=>change({...plan,stops:plan.stops.map(st=>st.id===stop.id?{...st,place:{...st.place,city}}:st)})}/>
-        {i>0&&<><Text style={s.muted}>From {plan.stops[i-1].place.city} · {Math.round(distanceKm(plan.stops[i-1].place,stop.place)).toLocaleString()} km direct</Text><View style={{flexDirection:"row",gap:6,flexWrap:"wrap"}}>{(Object.keys(transports) as Transport[]).map(mode=><Pressable key={mode} accessibilityRole="radio" accessibilityState={{checked:stop.mode===mode}} accessibilityLabel={`${transports[mode].label} to ${stop.place.city}`} disabled={!editable} onPress={()=>change({...plan,stops:plan.stops.map(st=>st.id===stop.id?{...st,mode}:st)})} style={{padding:10,borderRadius:10,borderWidth:1,borderColor:stop.mode===mode?colors.teal:colors.line,backgroundColor:stop.mode===mode?colors.pale:colors.surface}}><Text style={{color:colors.ink,fontSize:12}}>{transports[mode].icon} {transports[mode].label}</Text></Pressable>)}</View></>}
-        <Button quiet disabled={!editable} onPress={()=>change({...plan,stops:plan.stops.filter(st=>st.id!==stop.id)})}>Remove stop</Button>
-      </View>)}</View>
+        {next&&leg?<>
+          <Text style={s.eyebrow}>DEPARTING {stop.place.city.toUpperCase()}</Text>
+          <Text style={s.muted}>To {next.place.city}, {next.place.country} · {Math.round(distanceKm(stop.place,next.place)).toLocaleString()} km direct</Text>
+          <View style={{flexDirection:"row",gap:6,flexWrap:"wrap"}}>{modes.map(mode=><Pressable key={mode} accessibilityRole="radio" accessibilityState={{checked:leg.mode===mode}} accessibilityLabel={`${transports[mode].label} from ${stop.place.city} to ${next.place.city}`} disabled={!editable} onPress={()=>change(updateConnection(plan,{...leg,mode}))} style={{padding:10,borderRadius:10,borderWidth:1,borderColor:leg.mode===mode?colors.teal:colors.line,backgroundColor:leg.mode===mode?colors.pale:colors.surface}}><Text style={{color:colors.ink,fontSize:12}}>{transports[mode].icon} {transports[mode].label}</Text></Pressable>)}</View>
+          {modes.length===2&&<Text style={[s.muted,{fontSize:12}]}>These stops are on disconnected land areas. Ground transport is hidden. Flight and ferry options are planning choices, not confirmed services.</Text>}
+          {!modes.includes(leg.mode)&&<Text style={s.error}>This older connection uses {transports[leg.mode].label.toLowerCase()}. Choose flight or ferry for this crossing.</Text>}
+          <Button quiet onPress={()=>setDetailsOpen(detailsOpen===stop.id?null:stop.id)}>{detailsOpen===stop.id?"Hide details":"Details"} · {stop.place.city} → {next.place.city}</Button>
+          {detailsOpen===stop.id&&<TransportDetails key={`${leg.fromId}:${leg.toId}`} leg={leg} disabled={!editable} onChange={nextLeg=>change(updateConnection(plan,nextLeg))}/>}
+          {detailsOpen!==stop.id&&!!leg.details?.[leg.mode]?.serviceNumber&&<Text style={s.muted}>{leg.details[leg.mode]?.serviceNumber} · {leg.details[leg.mode]?.departureDate||"Date undecided"}</Text>}
+        </>:<Text style={s.muted}>Final stop · add another destination for onward transport.</Text>}
+        {savedConnections.map(saved=><View key={saved.toId} style={{gap:5}}><Text style={s.muted}>Saved connection to {plan.stops.find(st=>st.id===saved.toId)?.place.city} · outside the current route</Text><Text style={s.muted}>{transports[saved.mode].label} {saved.details?.[saved.mode]?.serviceNumber} {saved.details?.[saved.mode]?.departureDate}</Text><Text style={[s.muted,{fontSize:12}]}>Details are retained. Put these stops next to each other again to edit this connection.</Text></View>)}
+        <Button quiet disabled={!editable} onPress={()=>change(removePlanStop(plan,stop.id))}>Remove stop</Button>
+      </View>;}}/>
     </>}
   </ScrollView>;
 }

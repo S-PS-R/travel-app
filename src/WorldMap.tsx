@@ -8,6 +8,7 @@ import { Button, useTheme } from "./ui";
 import { transports } from "./plannerModel";
 import type { WorldMapProps } from "./WorldMap.types";
 import { mapStars, oceanBlue } from "./mapAppearance";
+import { routeSegments } from "./routeGeometry";
 
 // Native offline overview. The web implementation uses live vector tiles.
 export default function WorldMap({ trips, selected, onSelect, planner, route = [] }: WorldMapProps) {
@@ -35,7 +36,7 @@ export default function WorldMap({ trips, selected, onSelect, planner, route = [
       {globe&&<Circle cx={500} cy={270} r={235*zoom+3} fill="url(#sea)" stroke="#346b80" strokeWidth={2}/>}
       {countryData.features.map((c,i)=><Path key={i} d={path(c)??""} fill="#214752" stroke="#527080" strokeWidth={0.6} onPress={()=>{const continent=continents.find(x=>x.name===c.properties.CONTINENT);setLabel(c.properties.NAME_EN);if(zoom<2&&continent){setCenter([...continent.center]);setZoom(3);}else{setCenter([c.properties.LABEL_X,c.properties.LABEL_Y]);setZoom(z=>Math.min(15,z*1.5));}}}/>)}
       {zoom>2&&countryData.features.map((c,i)=>{const xy=projection([c.properties.LABEL_X,c.properties.LABEL_Y]);return xy&&visible(c.properties.LABEL_X,c.properties.LABEL_Y)?<SvgText key={i} x={xy[0]} y={xy[1]} fill="#d7e4e9" fontSize={10} textAnchor="middle">{c.properties.NAME_EN}</SvgText>:null;})}
-      {route.slice(1).map((st,i)=><Path key={st.id} d={path({type:"LineString",coordinates:[[route[i].place.lon,route[i].place.lat],[st.place.lon,st.place.lat]]})??""} fill="none" stroke={transports[st.mode].color} strokeWidth={2} strokeDasharray="5 4"/>)}
+      {routeSegments(route).map((coordinates,i)=><Path key={route[i+1].id} d={path({type:"LineString",coordinates})??""} fill="none" stroke={transports[route[i+1].mode].color} strokeWidth={2} strokeDasharray="5 4"/>)}
       {pins.map((p,i)=>{const point=projection([p.lon,p.lat]);return point&&visible(p.lon,p.lat)?<G key={`${placeKey(p)}-${i}`} onPress={()=>onSelect(p)}><Circle cx={point[0]} cy={point[1]} r={selected===placeKey(p)?10:7} fill="#f5cba0" stroke="white" strokeWidth={2}/><SvgText x={point[0]+12} y={point[1]} fontSize={13} fill="white">{p.city}</SvgText></G>:null;})}
     </Svg></View>
     <View style={{padding:16,gap:12}}><View style={{flexDirection:"row",flexWrap:"wrap",gap:8}}>{continents.map(c=><Button key={c.name} quiet onPress={()=>{setCenter([...c.center]);setZoom(3);setLabel(c.name);}}>{c.name}</Button>)}</View>
