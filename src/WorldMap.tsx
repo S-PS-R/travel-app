@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, Platform } from "react-native";
-import Svg, { Path, Circle, G, Text as SvgText } from "react-native-svg";
-import { geoNaturalEarth1, geoPath, geoGraticule10 } from "d3-geo";
+import Svg, { Path, Circle, G, Text as SvgText, Defs, ClipPath, Image as SvgImage } from "react-native-svg";
+import { geoEquirectangular, geoPath, geoGraticule10 } from "d3-geo";
 import { feature } from "topojson-client";
 import world from "world-atlas/countries-110m.json";
 import { type Place, type Trip, placeKey, isVisited } from "./model";
-import { Button, colors, s } from "./ui";
+import { Button, useTheme } from "./ui";
 const countries = (
   feature(
     world as never,
@@ -21,6 +21,7 @@ export default function WorldMap({
   selected: string | null;
   onSelect: (place: Place) => void;
 }) {
+  const {colors,s,mode}=useTheme();
   const [zoom, setZoom] = useState(1);
   const [center, setCenter] = useState<[number, number]>([0, 0]);
   const pins = useMemo(
@@ -41,14 +42,15 @@ export default function WorldMap({
         .map((stop) => String(Number(stop.place.countryId))),
     ),
   );
-  const projection = geoNaturalEarth1().scale(170).translate([500, 270]);
+  const projection = geoEquirectangular().scale(1000/(2*Math.PI)).translate([500, 270]);
   const path = geoPath(projection);
+  const landPath=countries.map(c=>path(c)??'').join(' ');
   const size = 1000 / zoom,
     height = 540 / zoom;
   return (
     <View
       style={{
-        backgroundColor: "#eaf3f4",
+        backgroundColor: colors.surface,
         borderRadius: 16,
         overflow: "hidden",
         borderWidth: 1,
@@ -58,8 +60,8 @@ export default function WorldMap({
       <View style={[s.spread, { padding: 20, flexWrap: "wrap" }]}>
         <Text style={s.eyebrow}>YOUR WORLD, ONE PLACE AT A TIME</Text>
         <View style={s.row}>
-          <Text style={s.muted}>● Visited</Text>
-          <Text style={s.muted}>○ Planned</Text>
+          <Text style={[s.muted,{color:colors.pin}]}>● Visited</Text>
+          <Text style={s.muted}>○ Planned · outlined countries visited</Text>
         </View>
       </View>
       <Svg
@@ -67,22 +69,26 @@ export default function WorldMap({
         height={410}
         viewBox={`${500 - size / 2 + center[0]} ${270 - height / 2 + center[1]} ${size} ${height}`}
         accessibilityLabel="World map showing your destinations"
+        style={{backgroundColor:colors.ocean}}
       >
+        <Defs><ClipPath id="land-mask"><Path d={landPath}/></ClipPath></Defs>
         <Path
           d={path(geoGraticule10()) ?? ""}
-          stroke="#dce9eb"
+          stroke={colors.grid}
           strokeWidth={0.6}
           fill="none"
         />
+        <Path d={landPath} fill={mode==='dark'?'#647653':'#7e9464'} stroke={colors.coast} strokeWidth={1.6/zoom}/>
+        <SvgImage href={require('../assets/earth.jpg')} x={0} y={20} width={1000} height={500} preserveAspectRatio="none" clipPath="url(#land-mask)" opacity={mode==='dark'?0.88:1}/>
         {countries
-          .filter((c) => c.id !== "010")
           .map((c, index) => (
             <Path
               key={c.id ?? `region-${index}`}
               d={path(c) ?? ""}
-              fill={visited.has(String(Number(c.id))) ? "#8ac4b3" : "#d5e3e1"}
-              stroke="#f2f7f5"
-              strokeWidth={0.6}
+              fill="none"
+              stroke={visited.has(String(Number(c.id))) ? colors.visited : colors.border}
+              strokeOpacity={visited.has(String(Number(c.id)))?1:0.65}
+              strokeWidth={(visited.has(String(Number(c.id)))?2:0.65)/zoom}
             />
           ))}
         {pins.map((p) => {
@@ -116,15 +122,16 @@ export default function WorldMap({
                   cx={point[0]}
                   cy={point[1]}
                   r={12 / zoom}
-                  fill="#147e7828"
+                  fill={colors.pin}
+                  opacity={0.25}
                 />
               )}
               <Circle
                 cx={point[0]}
                 cy={point[1]}
                 r={(active ? 6 : 4) / zoom}
-                fill={past ? "#147e78" : "white"}
-                stroke={past ? "white" : "#147e78"}
+                fill={past ? colors.pin : colors.pinHalo}
+                stroke={past ? colors.pinHalo : colors.pin}
                 strokeWidth={2 / zoom}
               />
               {(active || zoom > 1.5) && (
@@ -133,7 +140,9 @@ export default function WorldMap({
                   y={point[1] - 8 / zoom}
                   fontSize={13 / zoom}
                   fontWeight="600"
-                  fill={colors.ink}
+                  fill={colors.white}
+                  stroke="#102d39"
+                  strokeWidth={0.4/zoom}
                 >
                   {p.city}
                 </SvgText>
@@ -144,7 +153,7 @@ export default function WorldMap({
       </Svg>
       <View style={[s.spread, { padding: 16, flexWrap: "wrap" }]}>
         <Text style={[s.muted, { fontSize: 12 }]}>
-          Map: Natural Earth · Select a pin to revisit a place
+          Land imagery: NASA Earth Observatory (June 2004) · Borders: Natural Earth
         </Text>
         <View style={[s.row, { gap: 5, flexWrap: "wrap" }]}>
           {zoom > 1 && (

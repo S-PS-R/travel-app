@@ -1,4 +1,5 @@
-import React from "react";
+import React, {useMemo} from "react";
+import {usePalette, type Palette} from './theme';
 import {
   Pressable,
   Text,
@@ -8,15 +9,7 @@ import {
   Platform,
   type TextInputProps,
 } from "react-native";
-export const colors = {
-  ink: "#193c42",
-  muted: "#687f83",
-  teal: "#137f78",
-  pale: "#e6f3ef",
-  line: "#dce7e7",
-  white: "#ffffff",
-  bg: "#f5f8f8",
-};
+export function useTheme(){const theme=usePalette();const s=useMemo(()=>createStyles(theme.colors),[theme.colors]);return {...theme,s};}
 export const serif =
   Platform.OS === "ios"
     ? "Georgia"
@@ -36,6 +29,7 @@ export function Button({
   disabled?: boolean;
   danger?: boolean;
 }) {
+  const {colors,s}=useTheme();
   return (
     <Pressable
       accessibilityRole="button"
@@ -51,7 +45,7 @@ export function Button({
     >
       <Text
         style={{
-          color: danger ? "#a83333" : quiet ? colors.ink : "white",
+          color: danger ? colors.danger : quiet ? colors.ink : colors.onAccent,
           fontSize: 14,
           fontWeight: "600",
         }}
@@ -62,12 +56,13 @@ export function Button({
   );
 }
 export function Field({ label, ...props }: TextInputProps & { label: string }) {
+  const {colors,s}=useTheme();
   return (
     <View style={{ gap: 7, flexGrow: 1 }}>
       <Text style={s.label}>{label}</Text>
       <TextInput
         accessibilityLabel={label}
-        placeholderTextColor="#87999b"
+        placeholderTextColor={colors.placeholder}
         {...props}
         style={[
           s.input,
@@ -78,7 +73,7 @@ export function Field({ label, ...props }: TextInputProps & { label: string }) {
     </View>
   );
 }
-export const s = StyleSheet.create({
+const createStyles = (colors:Palette) => StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 12 },
   spread: {
     flexDirection: "row",
@@ -113,11 +108,11 @@ export const s = StyleSheet.create({
     padding: 12,
     fontSize: 16,
     color: colors.ink,
-    backgroundColor: "white",
+    backgroundColor: colors.surface,
     minHeight: 46,
   },
   card: {
-    backgroundColor: "white",
+    backgroundColor: colors.surface,
     borderRadius: 16,
     borderWidth: 1,
     borderColor: colors.line,
@@ -125,7 +120,7 @@ export const s = StyleSheet.create({
     gap: 16,
   },
   divider: { height: 1, backgroundColor: colors.line },
-  error: { color: "#a83333", fontSize: 14, lineHeight: 22 },
+  error: { color: colors.danger, fontSize: 14, lineHeight: 22 },
   pill: {
     borderRadius: 20,
     paddingHorizontal: 12,

@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, ScrollView, Modal, Pressable, Image } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { Button, Field, s, colors } from "./ui";
+import { Button, Field, useTheme } from "./ui";
 import {
   type Trip,
   type Place,
@@ -19,6 +19,7 @@ export default function TripEditor({
   onSave: (trip: Trip) => Promise<void>;
   onClose: () => void;
 }) {
+  const {colors,s}=useTheme();
   const [trip, setTrip] = useState<Trip>(
     initial
       ? JSON.parse(JSON.stringify(initial))
@@ -124,7 +125,7 @@ export default function TripEditor({
       <View
         style={{
           flex: 1,
-          backgroundColor: "#12323888",
+          backgroundColor: colors.overlay,
           alignItems: "center",
           justifyContent: "center",
           padding: 16,

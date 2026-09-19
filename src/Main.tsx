@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import { StatusBar } from "expo-status-bar";
 import type { Session } from "@supabase/supabase-js";
 import WorldMap from "./WorldMap";
 import TripEditor from "./TripEditor";
-import { Button, Field, colors, s, serif } from "./ui";
+import { Button, Field, useTheme, serif } from "./ui";
 import {
   type Trip,
   type Place,
@@ -27,7 +27,9 @@ import {
 } from "./model";
 import { supabase, loadTrips, persistTrip, removeTrip } from "./storage";
 import { useAgentTools } from "./useAgentTools";
+import { authRedirect, googleEnabled, listenForAuthLinks, signInWithGoogle } from "./auth";
 export default function App() {
+  const {colors,s,mode,toggleTheme,themeError}=useTheme();
   const { width } = useWindowDimensions();
   const compact = width < 900;
   const [trips, setTrips] = useState<Trip[]>([]);
@@ -51,22 +53,65 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [recovery, setRecovery] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const owner = useRef<string | undefined>(undefined);
+  const revision = useRef(0);
   useEffect(() => {
     if (!supabase) return;
+    let alive = true;
+    let receivedEvent = false;
+    const acceptSession = (next: Session | null) => {
+      if (!alive) return;
+      if (owner.current !== next?.user.id) {
+        owner.current = next?.user.id;
+        revision.current++;
+        setTrips([]);
+        setDetail(null);
+        setSelected(null);
+        setEditor(null);
+        setDemo(false);
+        setLoading(true);
+        setQuery("");
+        setNotice("");
+        setError("");
+        setEmail("");
+        setPassword("");
+        setConfirmPassword("");
+        setConfirmDelete(false);
+        setDeleting(false);
+      }
+      setSession(next);
+      setAuthReady(true);
+    };
     supabase.auth.getSession().then(({ data, error }) => {
+      if (!alive || receivedEvent) return;
       if (error) setError(error.message);
-      setSession(data.session);
-      setAuthReady(true);
+      acceptSession(data.session);
+    }).catch(() => {
+      if (alive) {
+        setError("Could not restore your session. Please reopen the app and try again.");
+        setLoading(false);
+        setLoadFailed(true);
+      }
     });
-    const { data } = supabase.auth.onAuthStateChange((_, session) => {
-      setSession(session);
-      setAuthReady(true);
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      receivedEvent = true;
+      acceptSession(session);
+      if (event === "PASSWORD_RECOVERY") {
+        setRecovery(true);
+        setAccount(true);
+        setAuthMessage("");
+      }
+      if (event === "SIGNED_OUT") setRecovery(false);
     });
-    return () => data.subscription.unsubscribe();
+    const stopLinks = listenForAuthLinks(setError);
+    return () => { alive = false; data.subscription.unsubscribe(); stopLinks(); };
   }, []);
   useEffect(() => {
     if (!authReady) return;
     let alive = true;
+    const started = revision.current;
     setLoading(true);
     setLoadFailed(false);
     setTrips([]);
@@ -76,19 +121,19 @@ export default function App() {
     setDemo(false);
     loadTrips(session?.user.id)
       .then((data) => {
-        if (alive) {
+        if (alive && started === revision.current) {
           setTrips(data);
           setDemo(!data.length && !session);
         }
       })
       .catch((e) => {
-        if (alive) {
+        if (alive && started === revision.current) {
           setLoadFailed(true);
           setError(e.message);
         }
       })
       .finally(() => {
-        if (alive) setLoading(false);
+        if (alive && started === revision.current) setLoading(false);
       });
     return () => {
       alive = false;
@@ -113,8 +158,10 @@ export default function App() {
     .sort((a, b) => tripStart(b).localeCompare(tripStart(a)));
   useAgentTools(shown, openTrip);
   async function save(trip: Trip) {
+    const started = revision.current;
     const next = [...trips.filter((t) => t.id !== trip.id), trip];
     await persistTrip(trip, next, session?.user.id);
+    if (started !== revision.current) return;
     setTrips(next);
     setDemo(false);
     setEditor(null);
@@ -125,18 +172,20 @@ export default function App() {
   }
   async function deleteCurrent() {
     if (!detail) return;
+    const started = revision.current;
     setDeleting(true);
     try {
       const next = trips.filter((t) => t.id !== detail.id);
       await removeTrip(detail.id, next, session?.user.id);
+      if (started !== revision.current) return;
       setTrips(next);
       setDetail(null);
       setConfirmDelete(false);
       setNotice("Trip removed.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not remove trip.");
+      if (started === revision.current) setError(e instanceof Error ? e.message : "Could not remove trip.");
     } finally {
-      setDeleting(false);
+      if (started === revision.current) setDeleting(false);
     }
   }
   async function auth(signup: boolean) {
@@ -145,7 +194,7 @@ export default function App() {
     setAuthMessage("");
     try {
       const r = signup
-        ? await supabase.auth.signUp({ email: email.trim(), password })
+        ? await supabase.auth.signUp({ email: email.trim(), password, options: { emailRedirectTo: authRedirect() } })
         : await supabase.auth.signInWithPassword({
             email: email.trim(),
             password,
@@ -165,6 +214,39 @@ export default function App() {
       setAuthBusy(false);
     }
   }
+  async function accountAction(action: "google" | "reset" | "update" | "signout") {
+    if (!supabase || authBusy) return;
+    setAuthBusy(true);
+    setAuthMessage("");
+    try {
+      if (action === "google") await signInWithGoogle();
+      if (action === "reset") {
+        if (!email.trim()) throw new Error("Enter your email address first.");
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: authRedirect() });
+        if (error) throw error;
+        setAuthMessage("If this email has an account, you’ll receive a reset link. Open it on this device in the same browser or app.");
+      }
+      if (action === "update") {
+        if (password.length < 8) throw new Error("Use at least 8 characters for your new password.");
+        if (password !== confirmPassword) throw new Error("The passwords do not match.");
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+        setPassword(""); setConfirmPassword(""); setRecovery(false);
+        setAuthMessage("Password updated.");
+      }
+      if (action === "signout") {
+        const { error } = await supabase.auth.signOut({ scope: "local" });
+        if (error) throw error;
+        setAccount(false);
+      }
+    } catch (e) {
+      setAuthMessage(e instanceof Error ? e.message : "Could not complete that request.");
+    } finally { setAuthBusy(false); }
+  }
+  function closeAccount() {
+    if (authBusy) return;
+    setAccount(false); setPassword(""); setConfirmPassword("");
+  }
   function openTrip(t: Trip) {
     setDetail(t);
     setConfirmDelete(false);
@@ -178,12 +260,12 @@ export default function App() {
           Platform.OS === "ios" ? 50 : Platform.OS === "android" ? 30 : 0,
       }}
     >
-      <StatusBar style="dark" />
+      <StatusBar style={mode==='dark'?'light':'dark'} />
       <View
         style={[
           s.spread,
           {
-            backgroundColor: "white",
+            backgroundColor: colors.surface,
             paddingHorizontal: compact ? 20 : 40,
             paddingVertical: 20,
             borderBottomWidth: 1,
@@ -203,10 +285,10 @@ export default function App() {
               justifyContent: "center",
             }}
           >
-            <Text style={{ fontSize: 25, color: "white" }}>↗</Text>
+            <Text style={{ fontSize: 25, color: colors.onAccent }}>↗</Text>
           </View>
           <Text style={{ fontFamily: serif, fontSize: 29, color: colors.ink }}>
-            wayfarer
+            veyfar
           </Text>
         </View>
         <View style={s.row}>
@@ -234,7 +316,7 @@ export default function App() {
             </Pressable>
           ))}
         </View>
-        <Button
+        <View style={[s.row,{flexWrap:'wrap'}]}><Pressable accessibilityRole="switch" accessibilityLabel="Dark mode" accessibilityState={{checked:mode==='dark'}} onPress={toggleTheme} style={[s.button,{borderColor:colors.line,backgroundColor:colors.pale}]}><Text style={{fontSize:14,fontWeight:'600',color:colors.ink}}>{mode==='dark'?'☾ Dark':'☀ Light'}</Text></Pressable><Button
           quiet
           onPress={() => {
             setAuthMessage("");
@@ -242,7 +324,7 @@ export default function App() {
           }}
         >
           {session ? "My account" : "Local explorer"}
-        </Button>
+        </Button></View>
       </View>
       <ScrollView
         contentContainerStyle={{
@@ -280,14 +362,14 @@ export default function App() {
             style={[
               s.spread,
               {
-                backgroundColor: "#edf3fb",
+                backgroundColor: colors.banner,
                 padding: 14,
                 borderRadius: 10,
                 flexWrap: "wrap",
               },
             ]}
           >
-            <Text style={[s.muted, { color: "#426184" }]}>
+            <Text style={[s.muted, { color: colors.bannerText }]}>
               You’re exploring sample trips. Add your first trip to make this
               world yours.
             </Text>
@@ -307,6 +389,7 @@ export default function App() {
             Saved on this device · Connect an account for cloud saving.
           </Text>
         )}
+        {!!themeError&&<Text accessibilityRole="alert" style={s.error}>{themeError}</Text>}
         {!!error && (
           <View style={s.card}>
             <Text accessibilityRole="alert" style={s.error}>
@@ -474,7 +557,7 @@ export default function App() {
                     borderColor: colors.line,
                     borderRadius: 15,
                     overflow: "hidden",
-                    backgroundColor: "white",
+                    backgroundColor: colors.surface,
                     opacity: pressed ? 0.8 : 1,
                   })}
                 >
@@ -496,7 +579,7 @@ export default function App() {
                     <View
                       style={{
                         height: 160,
-                        backgroundColor: i % 2 ? "#d6e5ed" : "#e1ede7",
+                        backgroundColor: i % 2 ? colors.cardA : colors.cardB,
                         justifyContent: "center",
                         padding: 24,
                       }}
@@ -575,7 +658,7 @@ export default function App() {
           <View
             style={{
               flex: 1,
-              backgroundColor: "#12323888",
+              backgroundColor: colors.overlay,
               alignItems: "center",
               justifyContent: "center",
               padding: 16,
@@ -683,12 +766,12 @@ export default function App() {
           visible
           transparent
           animationType="fade"
-          onRequestClose={() => setAccount(false)}
+          onRequestClose={closeAccount}
         >
           <View
             style={{
               flex: 1,
-              backgroundColor: "#12323888",
+              backgroundColor: colors.overlay,
               justifyContent: "center",
               alignItems: "center",
               padding: 20,
@@ -702,11 +785,18 @@ export default function App() {
                 <Text style={s.subtitle}>
                   {session ? "Your account" : "Your world, everywhere"}
                 </Text>
-                <Button quiet onPress={() => setAccount(false)}>
+                <Button quiet disabled={authBusy} onPress={closeAccount}>
                   Close
                 </Button>
               </View>
-              {session ? (
+              {session && recovery ? (
+                <>
+                  <Text style={s.body}>Choose a new password</Text>
+                  <Field label="New password" secureTextEntry value={password} onChangeText={setPassword} />
+                  <Field label="Confirm new password" secureTextEntry value={confirmPassword} onChangeText={setConfirmPassword} />
+                  <Button disabled={authBusy} onPress={() => accountAction("update")}>Save new password</Button>
+                </>
+              ) : session ? (
                 <>
                   <Text style={s.body}>{session.user.email}</Text>
                   <Text style={s.muted}>
@@ -714,11 +804,8 @@ export default function App() {
                     separately on this device.
                   </Text>
                   <Button
-                    onPress={async () => {
-                      const { error } = await supabase!.auth.signOut();
-                      if (error) setAuthMessage(error.message);
-                      else setAccount(false);
-                    }}
+                    disabled={authBusy}
+                    onPress={() => accountAction("signout")}
                   >
                     Sign out
                   </Button>
@@ -729,6 +816,7 @@ export default function App() {
                     Sign in to save trips across devices. Device-local trips
                     stay separate from your account.
                   </Text>
+                  {googleEnabled && <Button disabled={authBusy} onPress={() => accountAction("google")}>Continue with Google</Button>}
                   <Field
                     label="Email"
                     autoCapitalize="none"
@@ -747,6 +835,9 @@ export default function App() {
                   </Button>
                   <Button quiet disabled={authBusy} onPress={() => auth(true)}>
                     Create account
+                  </Button>
+                  <Button quiet disabled={authBusy} onPress={() => accountAction("reset")}>
+                    Forgot password?
                   </Button>
                 </>
               ) : (

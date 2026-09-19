@@ -1,6 +1,6 @@
-# Wayfarer — travel-app
+# Veyfar — travel-app
 
-A first version of your travel journal, based on the shared **Travel App Features** conversation. “Wayfarer” is a working name.
+A first version of your travel journal, based on the shared **Travel App Features** conversation. “Veyfar” is a working name.
 
 ## Run it
 
@@ -19,6 +19,9 @@ Use `pnpm start` to show the device QR code. A compatible Expo Go app or develop
 
 ## What works
 
+- Light/dark appearance toggle in the header, saved on the device; initially follows the device theme.
+- NASA land imagery with forest, desert, terrain, and snow colors; contrasting oceans and country outlines. Visited-country outlines preserve landscape colors.
+
 - A world map with destination pins, visited country shading, zoom and directional controls.
 - Multiple visits to the same city grouped in its place journal.
 - Create, view, edit, and remove trips with multiple dated destinations.
@@ -33,11 +36,13 @@ The offline city picker contains common destinations. Other places can be entere
 
 ## Connect accounts and cloud saving
 
-No cloud project, subscription, or secret has been created for you. These steps remain before account creation can work:
+See [the free account setup and security guide](docs/ACCOUNTS.md) for the recommended login options, email-service requirements, and direct account-isolation test. The [V2 GPS trip specification](docs/V2-GPS-TRIPS.md) records the requested Start Trip / automatic city and date capture for the next release.
+
+The local app is connected to your Supabase project. The trips migrations and development redirect URLs are applied, and database-role isolation checks passed. For a fresh project, use these steps:
 
 1. Create your own Supabase project.
-2. Run `supabase/migrations/001_trips.sql` in its SQL editor.
-3. Enable email/password authentication. Configure your website origin as the Auth Site URL. Email confirmation links return to that site; on mobile, confirm in the browser and then sign in within the app.
+2. Run `supabase/migrations/001_trips.sql`, then `002_account_isolation.sql`, in its SQL editor.
+3. Enable email/password and configure production SMTP before opening signup to users outside your project team. Keep email confirmation enabled. Set the Auth Site URL and exact redirect allowlist to your app. Recovery links use PKCE and must open in the same browser/app. Google sign-in is implemented but hidden until its provider is configured and `EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=true`; see the account guide for setup.
 4. Copy `.env.example` to `.env` and set the project URL and **publishable** key from Supabase’s project settings. Never use a service-role/secret key in this app.
 5. Restart Expo. The account screen now offers sign-in and account creation.
 

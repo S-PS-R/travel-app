@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Wayfarer",
+    "name": "Veyfar",
     "slug": "travel-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
     },
@@ -24,10 +24,11 @@
     "description": "Your travel history, one place at a time.",
     "scheme": "wayfarer",
     "plugins": [
+      "expo-secure-store",
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Wayfarer to attach your selected photos to your trip journal.",
+          "photosPermission": "Allow Veyfar to attach your selected photos to your trip journal.",
           "cameraPermission": false,
           "microphonePermission": false
         }
