@@ -84,4 +84,6 @@ Current priority: maps and travel planning; accounts and friends are deferred. R
 
 ### Windows preview troubleshooting
 
+For copy-paste start and stop commands in VS Code PowerShell, see [RUN.md](RUN.md). The `run.ps1` script also finds the bundled Node runtime when `node` is not on PATH.
+
 If `node` is not recognized in VS Code, Node.js must be installed/on that terminal's PATH. The runtime bundled with this workspace's Codex session can also be invoked by its full path. If a server on port 8081 responds but `localhost` stalls, try `http://127.0.0.1:8081/`. On this workstation, a separate IPv6 loopback listener interfered with the localhost bundle request. Browser storage is separate for each hostname, so local trips saved under `localhost` do not automatically appear under `127.0.0.1`. Account callbacks are currently configured for `localhost`.
