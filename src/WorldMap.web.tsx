@@ -9,6 +9,7 @@ import { isVisited, placeKey, type Place } from "./model";
 import { transports } from "./plannerModel";
 import type { WorldMapProps } from "./WorldMap.types";
 import { useTheme } from "./ui";
+import { mapStars, oceanBlue } from "./mapAppearance";
 
 const empty: GeoJSON.FeatureCollection = { type: "FeatureCollection", features: [] };
 export default function WorldMap(props: WorldMapProps) {
@@ -42,7 +43,7 @@ export default function WorldMap(props: WorldMapProps) {
       clearTimeout(timer); setError("");
       m.setProjection({ type: latest.current.planner ? "globe" : "mercator" });
       m.setPaintProperty("background", "background-color", "#203b48");
-      m.setPaintProperty("water", "fill-color", "#07162e");
+      m.setPaintProperty("water", "fill-color", oceanBlue);
       m.setPaintProperty("landcover_wood", "fill-color", "#18474b");
       m.setPaintProperty("landuse_park", "fill-color", "#205252");
       m.setPaintProperty("landcover_glacier", "fill-color", "#a7c1ce");
@@ -162,7 +163,10 @@ export default function WorldMap(props: WorldMapProps) {
         {props.planner && <Pressable accessibilityRole="button" onPress={fitRoute} style={chip}><Text style={chipText}>Fit route</Text></Pressable>}
       </View>
     </View>
-    <View style={{ position: "relative" }}>
+    <View style={{ position: "relative", backgroundColor: "#000000" }}>
+      <svg aria-hidden="true" className="veyfar-stars" viewBox="0 0 1000 540" preserveAspectRatio="none">
+        {mapStars.map((star, i) => <circle key={i} cx={star.x} cy={star.y} r={star.radius} fill="white" opacity={star.opacity} />)}
+      </svg>
       <div ref={host} className="veyfar-map" style={{ height: props.planner ? 560 : 510, width: "100%" }} />
       {!ready && !error && <View pointerEvents="none" style={{position:"absolute",top:20,left:20}}><Text style={chipText}>Opening your world…</Text></View>}
       {hover && <div role="tooltip" style={{position:"absolute",pointerEvents:"none",left:Math.min(hover.x+14,(host.current?.clientWidth??300)-190),top:Math.max(8,hover.y-42),background:"#f0f6f5",color:"#12373c",padding:"9px 13px",borderRadius:10,fontSize:13,fontWeight:700,boxShadow:"0 4px 20px #0005"}}>{hover.name}</div>}

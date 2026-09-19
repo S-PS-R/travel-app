@@ -7,6 +7,7 @@ import { placeKey } from "./model";
 import { Button, useTheme } from "./ui";
 import { transports } from "./plannerModel";
 import type { WorldMapProps } from "./WorldMap.types";
+import { mapStars, oceanBlue } from "./mapAppearance";
 
 // Native offline overview. The web implementation uses live vector tiles.
 export default function WorldMap({ trips, selected, onSelect, planner, route = [] }: WorldMapProps) {
@@ -28,8 +29,9 @@ export default function WorldMap({ trips, selected, onSelect, planner, route = [
   const visible=(lon:number,lat:number)=>!globe||geoDistance(center,[lon,lat])<Math.PI/2;
   return <View style={{backgroundColor:"#07162e",borderRadius:22,overflow:"hidden",borderWidth:1,borderColor:"#294153"}}>
     <View style={[s.spread,{padding:18}]}><Text style={{color:"#deeced",fontSize:22}}>{label}</Text><Button quiet onPress={()=>setGlobe(!globe)}>{globe?"Globe":"Map"} · switch</Button></View>
-    <View {...responder.panHandlers}><Svg width="100%" height={440} viewBox="0 0 1000 540" accessibilityLabel="Interactive world overview">
-      <Defs><RadialGradient id="sea"><Stop offset="0" stopColor="#163c57"/><Stop offset="1" stopColor="#08162b"/></RadialGradient></Defs>
+    <View {...responder.panHandlers} style={{backgroundColor:globe?"#000000":oceanBlue}}><Svg width="100%" height={440} viewBox="0 0 1000 540" accessibilityLabel="Interactive world overview">
+      <Defs><RadialGradient id="sea"><Stop offset="0" stopColor="#2589c2"/><Stop offset="1" stopColor={oceanBlue}/></RadialGradient></Defs>
+      {globe&&mapStars.map((star,i)=><Circle key={i} cx={star.x} cy={star.y} r={star.radius} fill="white" opacity={star.opacity}/>)}
       {globe&&<Circle cx={500} cy={270} r={235*zoom+3} fill="url(#sea)" stroke="#346b80" strokeWidth={2}/>}
       {countryData.features.map((c,i)=><Path key={i} d={path(c)??""} fill="#214752" stroke="#527080" strokeWidth={0.6} onPress={()=>{const continent=continents.find(x=>x.name===c.properties.CONTINENT);setLabel(c.properties.NAME_EN);if(zoom<2&&continent){setCenter([...continent.center]);setZoom(3);}else{setCenter([c.properties.LABEL_X,c.properties.LABEL_Y]);setZoom(z=>Math.min(15,z*1.5));}}}/>)}
       {zoom>2&&countryData.features.map((c,i)=>{const xy=projection([c.properties.LABEL_X,c.properties.LABEL_Y]);return xy&&visible(c.properties.LABEL_X,c.properties.LABEL_Y)?<SvgText key={i} x={xy[0]} y={xy[1]} fill="#d7e4e9" fontSize={10} textAnchor="middle">{c.properties.NAME_EN}</SvgText>:null;})}
