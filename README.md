@@ -80,7 +80,9 @@ GitHub stores the source and runs checks; it does not automatically publish an i
 - `supabase/migrations/001_trips.sql`: owner-isolated database table.
 - `ASSETS.md`: image and map attribution.
 
-Current priority: maps and travel planning; accounts and friends are deferred. Route lines use geographic arcs and direct distances for every mode, not actual road/rail/ferry routing, schedules, or travel times. One planner draft is stored on this device. Save before closing or reloading; drafts remain mounted when switching tabs.
+Current priority: maps and travel planning; accounts and friends are deferred. Route lines use geographic arcs and direct distances for every mode, not actual road/rail/ferry routing, schedules, or travel times. Save plan adds or updates a journey in Upcoming trips, where you can reopen, edit or remove it and start another. Optional start/end dates use calendar pickers. Plans remain on this device (separate from account trip journals); the previous single saved plan is imported automatically and its original storage is retained. Save before closing or reloading; unsaved work survives switching tabs, and opening another plan asks before discarding changes.
+
+Both destination forms use an offline catalog of over 1,250 capitals and major cities, plus curated travel destinations. Web autocomplete selects the suggested suffix as you type: keep typing to replace it, accept it with Tab/Right Arrow, or use Up/Down and Enter to add a suggestion. Suggestions sit immediately below the input. Search ignores accents and supports common alternate spellings such as Katmandu. Journal arrival/departure fields support calendar selection and typed dates.
 
 ### Windows preview troubleshooting
 

@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { View, Text, ScrollView, Modal, Pressable, Image } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Button, Field, useTheme } from "./ui";
+import DestinationInput from "./DestinationInput";
+import DateField from "./DateField";
 import {
   type Trip,
   type Place,
@@ -31,7 +33,6 @@ export default function TripEditor({
           createdAt: new Date().toISOString(),
         },
   );
-  const [query, setQuery] = useState("");
   const [custom, setCustom] = useState(false);
   const [customPlace, setCustomPlace] = useState({
     city: "",
@@ -57,7 +58,6 @@ export default function TripEditor({
         },
       ],
     }));
-    setQuery("");
     setCustom(false);
   }
   function update(id: string, patch: Partial<Stop>) {
@@ -211,19 +211,16 @@ export default function TripEditor({
                     { alignItems: "flex-start", flexWrap: "wrap" },
                   ]}
                 >
-                  <Field
-                    label="Arrival (YYYY-MM-DD)"
-                    placeholder="2025-05-04"
+                  <DateField
+                    label="Arrival"
                     value={stop.arrival}
-                    onChangeText={(arrival) => update(stop.id, { arrival })}
-                    maxLength={10}
+                    onChange={(arrival) => update(stop.id, { arrival })}
                   />
-                  <Field
-                    label="Departure (YYYY-MM-DD)"
-                    placeholder="2025-05-08"
+                  <DateField
+                    label="Departure"
                     value={stop.departure}
-                    onChangeText={(departure) => update(stop.id, { departure })}
-                    maxLength={10}
+                    min={stop.arrival}
+                    onChange={(departure) => update(stop.id, { departure })}
                   />
                 </View>
                 <Field
@@ -268,33 +265,7 @@ export default function TripEditor({
               </View>
             ))}
             <View style={s.card}>
-              <Field
-                label="Add a destination"
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Search cities or countries"
-              />
-              <View style={[s.row, { flexWrap: "wrap" }]}>
-                {places
-                  .filter((p) =>
-                    `${p.city} ${p.country}`
-                      .toLowerCase()
-                      .includes(query.toLowerCase()),
-                  )
-                  .slice(0, query ? 8 : 5)
-                  .map((p) => (
-                    <Pressable
-                      accessibilityRole="button"
-                      key={p.city}
-                      onPress={() => add(p)}
-                      style={s.pill}
-                    >
-                      <Text style={{ fontSize: 14, color: colors.teal }}>
-                        ＋ {p.city}
-                      </Text>
-                    </Pressable>
-                  ))}
-              </View>
+              <DestinationInput label="Add a destination" onSelect={add} disabled={busy}/>
               <Button quiet onPress={() => setCustom(!custom)}>
                 {custom
                   ? "Cancel custom place"

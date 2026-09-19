@@ -11,7 +11,7 @@ export const transports = {
 } as const;
 export type Transport = keyof typeof transports;
 export type PlanStop = { id: string; place: Place; mode: Transport };
-export type TravelPlan = { title: string; stops: PlanStop[] };
+export type TravelPlan = { title: string; stops: PlanStop[]; startDate?: string; endDate?: string };
 export const emptyPlan = (): TravelPlan => ({ title: "My next adventure", stops: [] });
 export function parsePlan(raw: string): TravelPlan {
   const p = JSON.parse(raw);

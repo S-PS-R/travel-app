@@ -41,7 +41,7 @@ export default function App() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(!supabase);
-  const [tab, setTab] = useState<"world" | "trips" | "plan">("world");
+  const [tab, setTab] = useState<"world" | "trips" | "plan" | "upcoming">("world");
   const [plannerOpened, setPlannerOpened] = useState(false);
   const [selected, setSelected] = useState<Place | null>(null);
   const [detail, setDetail] = useState<Trip | null>(null);
@@ -294,13 +294,13 @@ export default function App() {
             veyfar
           </Text>
         </View>
-        <View style={s.row}>
-          {(["world", "trips", "plan"] as const).map((t) => (
+        <View style={[s.row,{flexWrap:"wrap"}]}>
+          {(["world", "trips", "plan", "upcoming"] as const).map((t) => (
             <Pressable
               accessibilityRole="tab"
               accessibilityState={{ selected: tab === t }}
               key={t}
-              onPress={() => { setTab(t); if(t === "plan") setPlannerOpened(true); }}
+              onPress={() => { setTab(t); if(t === "plan" || t === "upcoming") setPlannerOpened(true); }}
               style={{
                 padding: 12,
                 borderBottomWidth: 2,
@@ -314,7 +314,7 @@ export default function App() {
                   color: tab === t ? colors.teal : colors.muted,
                 }}
               >
-                {t === "world" ? "My world" : t === "plan" ? "Plan a trip" : "My trips"}
+                {t === "world" ? "My world" : t === "plan" ? "Plan a trip" : t === "upcoming" ? "Upcoming trips" : "My trips"}
               </Text>
             </Pressable>
           ))}
@@ -329,9 +329,9 @@ export default function App() {
           {session ? "My account" : "Local explorer"}
         </Button></View>
       </View>
-      {plannerOpened && <View style={{flex:1,display:tab === "plan" ? "flex" : "none"}}><TravelPlanner /></View>}
+      {plannerOpened && <View style={{flex:1,display:tab === "plan" || tab === "upcoming" ? "flex" : "none"}}><TravelPlanner view={tab === "upcoming" ? "upcoming" : "plan"} onNavigate={setTab}/></View>}
       <ScrollView
-        style={{display:tab === "plan" ? "none" : "flex"}}
+        style={{display:tab === "plan" || tab === "upcoming" ? "none" : "flex"}}
         contentContainerStyle={{
           padding: compact ? 20 : 36,
           gap: 24,

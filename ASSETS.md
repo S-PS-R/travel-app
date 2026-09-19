@@ -1,5 +1,8 @@
 # Asset sources
 
+- Offline city autocomplete: [Natural Earth 1:50m populated places](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_50m_populated_places_simple.geojson), a public-domain dataset. `src/cityCatalog.ts` retains names, alternate names, coordinates, country identifiers and display rank for 1,251 places, combined with the existing curated destinations. Search runs on device without sending typed queries to a geocoding service. Geographic prominence ranks determine ordering after exact and prefix matches; this is not a live tourism popularity ranking.
+- Additional popular destinations (including Pokhara, Phuket and Udaipur): selected records from [Natural Earth 1:10m populated places](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_10m_populated_places_simple.geojson), also public domain.
+
 - Live web map: MapLibre GL JS and the [OpenFreeMap Dark style](https://openfreemap.org/quick_start/), with customized colors. OpenMapTiles / OpenStreetMap attribution remains on the map. The provider receives viewport/tile requests; trip notes and account identifiers are not sent. Pins and routes are client-rendered overlays.
 - `assets/countries.json`: [Natural Earth 1:110m admin-0 countries](https://github.com/nvkelso/natural-earth-vector/blob/master/geojson/ne_110m_admin_0_countries.geojson), public-domain geographic data, used for hover hit testing, continents, and native overview geometry. Small territories may be absent at this scale. The previous NASA raster is retained in the repository but no longer rendered.
 
