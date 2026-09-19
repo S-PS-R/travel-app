@@ -20,9 +20,10 @@ Use `pnpm start` to show the device QR code. A compatible Expo Go app or develop
 ## What works
 
 - Light/dark appearance toggle in the header, saved on the device; initially follows the device theme.
-- NASA land imagery with forest, desert, terrain, and snow colors; contrasting oceans and country outlines. Visited-country outlines preserve landscape colors.
+- Dark vector web map with drag-to-pan, mouse/touchpad zoom, country hover labels, continent navigation, and increasing city/street detail as you zoom. Switch between map and globe projections.
 
-- A world map with destination pins, visited country shading, zoom and directional controls.
+- Globe travel planner with city suggestions, map-picked stops, reordering, and flight/train/car/bus/ferry/bicycle/walk choices for each arrival leg. Colored routes and transport markers preview the journey; plans save locally.
+- A continent travel-footprint map based on past trips. Journal destination pins remain clickable.
 - Multiple visits to the same city grouped in its place journal.
 - Create, view, edit, and remove trips with multiple dated destinations.
 - Stays, trip notes, destination memories, and up to three small photos per destination.
@@ -32,7 +33,7 @@ Use `pnpm start` to show the device QR code. A compatible Expo Go app or develop
 
 Add your first real trip to replace the sample view. Sample data is never uploaded or stored as your travel history. Photos are persisted as small image data URLs for this first iteration; a dedicated photo-storage service should replace this before larger galleries. Browser storage can fill up, and clearing site/app data deletes local trips. A failed save keeps the editor open with an error.
 
-The offline city picker contains common destinations. Other places can be entered with coordinates. Map geometry is a country-level world overview, not a street map or routing service. Custom countries absent from the built-in list may have pins without country shading. Planned stops do not count as visited until their arrival date.
+The offline city picker contains common destinations. Other journal places can be entered with coordinates; web planner stops can be added by clicking land on the map. Native apps currently use an offline map/globe overview with drag/pinch gestures; detailed live tiles are web-only. Planned stops do not count as visited until their arrival date.
 
 ## Connect accounts and cloud saving
 
@@ -60,10 +61,9 @@ The tests cover dates, overlaps, coordinates, repeated visits, and trip duration
 
 ## GitHub, browser, and App Store
 
-This directory is a Git repository. A GitHub repository and remote still need to be created/connected. Once you have the repository URL:
+The public repository is [S-PS-R/travel-app](https://github.com/S-PS-R/travel-app). After each verified feature milestone, follow [DEVELOPMENT.md](DEVELOPMENT.md) and push:
 
 ```sh
-git remote add origin YOUR_REPOSITORY_URL
 git push -u origin main
 ```
 
@@ -80,4 +80,8 @@ GitHub stores the source and runs checks; it does not automatically publish an i
 - `supabase/migrations/001_trips.sql`: owner-isolated database table.
 - `ASSETS.md`: image and map attribution.
 
-Next product phase: review this UI together, connect accounts, then future-trip transportation options. Friends, route optimization, imports, and collaboration are later phases from the original conversation.
+Current priority: maps and travel planning; accounts and friends are deferred. Route lines use geographic arcs and direct distances for every mode, not actual road/rail/ferry routing, schedules, or travel times. One planner draft is stored on this device. Save before closing or reloading; drafts remain mounted when switching tabs.
+
+### Windows preview troubleshooting
+
+If `node` is not recognized in VS Code, Node.js must be installed/on that terminal's PATH. The runtime bundled with this workspace's Codex session can also be invoked by its full path. If a server on port 8081 responds but `localhost` stalls, try `http://127.0.0.1:8081/`. On this workstation, a separate IPv6 loopback listener interfered with the localhost bundle request. Browser storage is separate for each hostname, so local trips saved under `localhost` do not automatically appear under `127.0.0.1`. Account callbacks are currently configured for `localhost`.

@@ -1,0 +1,8 @@
+.veyfar-map .maplibregl-canvas { outline: none; }
+.veyfar-map .maplibregl-ctrl-group { background: #132d40; border: 1px solid #355461; border-radius: 12px; overflow: hidden; }
+.veyfar-map .maplibregl-ctrl-group button { width: 36px; height: 36px; border-color: #355461; }
+.veyfar-map .maplibregl-ctrl-icon { filter: invert(1); }
+.veyfar-map .maplibregl-ctrl-attrib { font-size: 10px; }
+.veyfar-map .maplibregl-canvas-container { cursor: grab; }
+.veyfar-map .maplibregl-canvas-container:active { cursor: grabbing; }
+.veyfar-transport { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border: 1px solid; border-radius: 50%; background: #0b2036; color: white; font-size: 18px; pointer-events: none; box-shadow: 0 0 20px #0007; }

@@ -1,218 +1,44 @@
-import React, { useMemo, useState } from "react";
-import { View, Text, Platform } from "react-native";
-import Svg, { Path, Circle, G, Text as SvgText, Defs, ClipPath, Image as SvgImage } from "react-native-svg";
-import { geoEquirectangular, geoPath, geoGraticule10 } from "d3-geo";
-import { feature } from "topojson-client";
-import world from "world-atlas/countries-110m.json";
-import { type Place, type Trip, placeKey, isVisited } from "./model";
+import React, { useMemo, useRef, useState } from "react";
+import { View, Text, PanResponder } from "react-native";
+import Svg, { Path, Circle, G, Text as SvgText, Defs, RadialGradient, Stop } from "react-native-svg";
+import { geoMercator, geoOrthographic, geoPath, geoDistance } from "d3-geo";
+import { countryData, continents } from "./mapData";
+import { placeKey } from "./model";
 import { Button, useTheme } from "./ui";
-const countries = (
-  feature(
-    world as never,
-    world.objects.countries as never,
-  ) as unknown as GeoJSON.FeatureCollection
-).features;
-export default function WorldMap({
-  trips,
-  selected,
-  onSelect,
-}: {
-  trips: Trip[];
-  selected: string | null;
-  onSelect: (place: Place) => void;
-}) {
-  const {colors,s,mode}=useTheme();
+import { transports } from "./plannerModel";
+import type { WorldMapProps } from "./WorldMap.types";
+
+// Native offline overview. The web implementation uses live vector tiles.
+export default function WorldMap({ trips, selected, onSelect, planner, route = [] }: WorldMapProps) {
+  const { s } = useTheme();
+  const [globe, setGlobe] = useState(!!planner);
   const [zoom, setZoom] = useState(1);
-  const [center, setCenter] = useState<[number, number]>([0, 0]);
-  const pins = useMemo(
-    () =>
-      Array.from(
-        new Map(
-          trips
-            .flatMap((t) => t.stops)
-            .map((stop) => [placeKey(stop.place), stop.place]),
-        ).values(),
-      ),
-    [trips],
-  );
-  const visited = new Set(
-    trips.flatMap((t) =>
-      t.stops
-        .filter(isVisited)
-        .map((stop) => String(Number(stop.place.countryId))),
-    ),
-  );
-  const projection = geoEquirectangular().scale(1000/(2*Math.PI)).translate([500, 270]);
-  const path = geoPath(projection);
-  const landPath=countries.map(c=>path(c)??'').join(' ');
-  const size = 1000 / zoom,
-    height = 540 / zoom;
-  return (
-    <View
-      style={{
-        backgroundColor: colors.surface,
-        borderRadius: 16,
-        overflow: "hidden",
-        borderWidth: 1,
-        borderColor: colors.line,
-      }}
-    >
-      <View style={[s.spread, { padding: 20, flexWrap: "wrap" }]}>
-        <Text style={s.eyebrow}>YOUR WORLD, ONE PLACE AT A TIME</Text>
-        <View style={s.row}>
-          <Text style={[s.muted,{color:colors.pin}]}>● Visited</Text>
-          <Text style={s.muted}>○ Planned · outlined countries visited</Text>
-        </View>
-      </View>
-      <Svg
-        width="100%"
-        height={410}
-        viewBox={`${500 - size / 2 + center[0]} ${270 - height / 2 + center[1]} ${size} ${height}`}
-        accessibilityLabel="World map showing your destinations"
-        style={{backgroundColor:colors.ocean}}
-      >
-        <Defs><ClipPath id="land-mask"><Path d={landPath}/></ClipPath></Defs>
-        <Path
-          d={path(geoGraticule10()) ?? ""}
-          stroke={colors.grid}
-          strokeWidth={0.6}
-          fill="none"
-        />
-        <Path d={landPath} fill={mode==='dark'?'#647653':'#7e9464'} stroke={colors.coast} strokeWidth={1.6/zoom}/>
-        <SvgImage href={require('../assets/earth.jpg')} x={0} y={20} width={1000} height={500} preserveAspectRatio="none" clipPath="url(#land-mask)" opacity={mode==='dark'?0.88:1}/>
-        {countries
-          .map((c, index) => (
-            <Path
-              key={c.id ?? `region-${index}`}
-              d={path(c) ?? ""}
-              fill="none"
-              stroke={visited.has(String(Number(c.id))) ? colors.visited : colors.border}
-              strokeOpacity={visited.has(String(Number(c.id)))?1:0.65}
-              strokeWidth={(visited.has(String(Number(c.id)))?2:0.65)/zoom}
-            />
-          ))}
-        {pins.map((p) => {
-          const point = projection([p.lon, p.lat]);
-          if (!point) return null;
-          const active = selected === placeKey(p);
-          const past = trips.some((t) =>
-            t.stops.some(
-              (st) => placeKey(st.place) === placeKey(p) && isVisited(st),
-            ),
-          );
-          return (
-            <G
-              key={placeKey(p)}
-              onPress={Platform.OS === 'web' ? undefined : () => onSelect(p)}
-              onClick={Platform.OS === 'web' ? () => onSelect(p) : undefined}
-              tabIndex={Platform.OS === 'web' ? 0 : undefined}
-              role={Platform.OS === 'web' ? 'button' : undefined}
-              onKeyDown={Platform.OS === 'web' ? (event: {key: string; preventDefault: () => void}) => {if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelect(p);}} : undefined}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${p.city}`}
-            >
-              <Circle
-                cx={point[0]}
-                cy={point[1]}
-                r={12 / zoom}
-                fill="transparent"
-              />
-              {active && (
-                <Circle
-                  cx={point[0]}
-                  cy={point[1]}
-                  r={12 / zoom}
-                  fill={colors.pin}
-                  opacity={0.25}
-                />
-              )}
-              <Circle
-                cx={point[0]}
-                cy={point[1]}
-                r={(active ? 6 : 4) / zoom}
-                fill={past ? colors.pin : colors.pinHalo}
-                stroke={past ? colors.pinHalo : colors.pin}
-                strokeWidth={2 / zoom}
-              />
-              {(active || zoom > 1.5) && (
-                <SvgText
-                  x={point[0] + 9 / zoom}
-                  y={point[1] - 8 / zoom}
-                  fontSize={13 / zoom}
-                  fontWeight="600"
-                  fill={colors.white}
-                  stroke="#102d39"
-                  strokeWidth={0.4/zoom}
-                >
-                  {p.city}
-                </SvgText>
-              )}
-            </G>
-          );
-        })}
-      </Svg>
-      <View style={[s.spread, { padding: 16, flexWrap: "wrap" }]}>
-        <Text style={[s.muted, { fontSize: 12 }]}>
-          Land imagery: NASA Earth Observatory (June 2004) · Borders: Natural Earth
-        </Text>
-        <View style={[s.row, { gap: 5, flexWrap: "wrap" }]}>
-          {zoom > 1 && (
-            <>
-              <Button
-                quiet
-                onPress={() => setCenter(([x, y]) => [x - 80 / zoom, y])}
-              >
-                ←
-              </Button>
-              <Button
-                quiet
-                onPress={() => setCenter(([x, y]) => [x + 80 / zoom, y])}
-              >
-                →
-              </Button>
-              <Button
-                quiet
-                onPress={() => setCenter(([x, y]) => [x, y - 60 / zoom])}
-              >
-                ↑
-              </Button>
-              <Button
-                quiet
-                onPress={() => setCenter(([x, y]) => [x, y + 60 / zoom])}
-              >
-                ↓
-              </Button>
-            </>
-          )}
-          <Button quiet onPress={() => setZoom((z) => Math.max(1, z / 1.5))}>
-            −
-          </Button>
-          <Button
-            quiet
-            onPress={() => {
-              if (selected) {
-                const p = pins.find((p) => placeKey(p) === selected);
-                if (p) {
-                  const xy = projection([p.lon, p.lat])!;
-                  setCenter([xy[0] - 500, xy[1] - 270]);
-                }
-              }
-              setZoom((z) => Math.min(6, z * 1.5));
-            }}
-          >
-            +
-          </Button>
-          <Button
-            quiet
-            onPress={() => {
-              setZoom(1);
-              setCenter([0, 0]);
-            }}
-          >
-            Reset
-          </Button>
-        </View>
-      </View>
+  const [center, setCenter] = useState<[number,number]>([10,20]);
+  const [label, setLabel] = useState("World");
+  const gesture = useRef({center,zoom,span:0});
+  const current = useRef({center,zoom}); current.current={center,zoom};
+  const responder = useMemo(()=>PanResponder.create({
+    onMoveShouldSetPanResponder:(_,g)=>Math.abs(g.dx)+Math.abs(g.dy)>5,
+    onPanResponderGrant:e=>{const t=e.nativeEvent.touches;gesture.current={...current.current,span:t.length>1?Math.hypot(t[1].pageX-t[0].pageX,t[1].pageY-t[0].pageY):0};},
+    onPanResponderMove:(e,g)=>{const t=e.nativeEvent.touches;if(t.length>1&&gesture.current.span){setZoom(Math.max(1,Math.min(15,gesture.current.zoom*Math.hypot(t[1].pageX-t[0].pageX,t[1].pageY-t[0].pageY)/gesture.current.span)));}else{setCenter([gesture.current.center[0]-g.dx/(2*current.current.zoom),Math.max(-80,Math.min(80,gesture.current.center[1]+g.dy/(2*current.current.zoom)))]);}},
+  }),[]);
+  const projection = globe ? geoOrthographic().rotate([-center[0],-center[1]]).scale(235*zoom).translate([500,270]) : geoMercator().center(center).scale(150*zoom).translate([500,270]);
+  const path=geoPath(projection);
+  const pins=planner?route.map(st=>st.place):Array.from(new Map(trips.flatMap(t=>t.stops).map(st=>[placeKey(st.place),st.place])).values());
+  const visible=(lon:number,lat:number)=>!globe||geoDistance(center,[lon,lat])<Math.PI/2;
+  return <View style={{backgroundColor:"#07162e",borderRadius:22,overflow:"hidden",borderWidth:1,borderColor:"#294153"}}>
+    <View style={[s.spread,{padding:18}]}><Text style={{color:"#deeced",fontSize:22}}>{label}</Text><Button quiet onPress={()=>setGlobe(!globe)}>{globe?"Globe":"Map"} · switch</Button></View>
+    <View {...responder.panHandlers}><Svg width="100%" height={440} viewBox="0 0 1000 540" accessibilityLabel="Interactive world overview">
+      <Defs><RadialGradient id="sea"><Stop offset="0" stopColor="#163c57"/><Stop offset="1" stopColor="#08162b"/></RadialGradient></Defs>
+      {globe&&<Circle cx={500} cy={270} r={235*zoom+3} fill="url(#sea)" stroke="#346b80" strokeWidth={2}/>}
+      {countryData.features.map((c,i)=><Path key={i} d={path(c)??""} fill="#214752" stroke="#527080" strokeWidth={0.6} onPress={()=>{const continent=continents.find(x=>x.name===c.properties.CONTINENT);setLabel(c.properties.NAME_EN);if(zoom<2&&continent){setCenter([...continent.center]);setZoom(3);}else{setCenter([c.properties.LABEL_X,c.properties.LABEL_Y]);setZoom(z=>Math.min(15,z*1.5));}}}/>)}
+      {zoom>2&&countryData.features.map((c,i)=>{const xy=projection([c.properties.LABEL_X,c.properties.LABEL_Y]);return xy&&visible(c.properties.LABEL_X,c.properties.LABEL_Y)?<SvgText key={i} x={xy[0]} y={xy[1]} fill="#d7e4e9" fontSize={10} textAnchor="middle">{c.properties.NAME_EN}</SvgText>:null;})}
+      {route.slice(1).map((st,i)=><Path key={st.id} d={path({type:"LineString",coordinates:[[route[i].place.lon,route[i].place.lat],[st.place.lon,st.place.lat]]})??""} fill="none" stroke={transports[st.mode].color} strokeWidth={2} strokeDasharray="5 4"/>)}
+      {pins.map((p,i)=>{const point=projection([p.lon,p.lat]);return point&&visible(p.lon,p.lat)?<G key={`${placeKey(p)}-${i}`} onPress={()=>onSelect(p)}><Circle cx={point[0]} cy={point[1]} r={selected===placeKey(p)?10:7} fill="#f5cba0" stroke="white" strokeWidth={2}/><SvgText x={point[0]+12} y={point[1]} fontSize={13} fill="white">{p.city}</SvgText></G>:null;})}
+    </Svg></View>
+    <View style={{padding:16,gap:12}}><View style={{flexDirection:"row",flexWrap:"wrap",gap:8}}>{continents.map(c=><Button key={c.name} quiet onPress={()=>{setCenter([...c.center]);setZoom(3);setLabel(c.name);}}>{c.name}</Button>)}</View>
+      <View style={s.row}><Button quiet onPress={()=>setZoom(z=>Math.max(1,z/1.5))}>−</Button><Button quiet onPress={()=>setZoom(z=>Math.min(15,z*1.5))}>+</Button><Button quiet onPress={()=>{setZoom(1);setCenter([10,20]);setLabel("World");}}>Reset</Button></View>
+      <Text style={{color:"#adc0c8",fontSize:12}}>Drag to explore · pinch to zoom · Natural Earth overview. Detailed city and street tiles are available in the web preview.</Text>
     </View>
-  );
+  </View>;
 }

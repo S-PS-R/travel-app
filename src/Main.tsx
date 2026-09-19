@@ -12,6 +12,8 @@ import {
 import { StatusBar } from "expo-status-bar";
 import type { Session } from "@supabase/supabase-js";
 import WorldMap from "./WorldMap";
+import TravelPlanner from "./TravelPlanner";
+import TravelStats from "./TravelStats";
 import TripEditor from "./TripEditor";
 import { Button, Field, useTheme, serif } from "./ui";
 import {
@@ -39,7 +41,8 @@ export default function App() {
   const [loadFailed, setLoadFailed] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [authReady, setAuthReady] = useState(!supabase);
-  const [tab, setTab] = useState<"world" | "trips">("world");
+  const [tab, setTab] = useState<"world" | "trips" | "plan">("world");
+  const [plannerOpened, setPlannerOpened] = useState(false);
   const [selected, setSelected] = useState<Place | null>(null);
   const [detail, setDetail] = useState<Trip | null>(null);
   const [editor, setEditor] = useState<Trip | true | null>(null);
@@ -292,12 +295,12 @@ export default function App() {
           </Text>
         </View>
         <View style={s.row}>
-          {(["world", "trips"] as const).map((t) => (
+          {(["world", "trips", "plan"] as const).map((t) => (
             <Pressable
               accessibilityRole="tab"
               accessibilityState={{ selected: tab === t }}
               key={t}
-              onPress={() => setTab(t)}
+              onPress={() => { setTab(t); if(t === "plan") setPlannerOpened(true); }}
               style={{
                 padding: 12,
                 borderBottomWidth: 2,
@@ -311,7 +314,7 @@ export default function App() {
                   color: tab === t ? colors.teal : colors.muted,
                 }}
               >
-                {t === "world" ? "My world" : "My trips"}
+                {t === "world" ? "My world" : t === "plan" ? "Plan a trip" : "My trips"}
               </Text>
             </Pressable>
           ))}
@@ -326,7 +329,9 @@ export default function App() {
           {session ? "My account" : "Local explorer"}
         </Button></View>
       </View>
+      {plannerOpened && <View style={{flex:1,display:tab === "plan" ? "flex" : "none"}}><TravelPlanner /></View>}
       <ScrollView
+        style={{display:tab === "plan" ? "none" : "flex"}}
         contentContainerStyle={{
           padding: compact ? 20 : 36,
           gap: 24,
@@ -530,6 +535,7 @@ export default function App() {
                 </View>
               </View>
             )}
+            {tab === "world" && <TravelStats trips={shown} />}
             <View style={[s.spread, { flexWrap: "wrap" }]}>
               <Text style={s.subtitle}>
                 {tab === "world" ? "From your journal" : "All trips"}
