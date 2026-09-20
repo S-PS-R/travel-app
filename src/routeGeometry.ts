@@ -6,7 +6,8 @@ export function routeSegments(stops: PlanStop[]): RoutePoint[][] {
   let previous=stops[0]?.place.lon??0;
   return stops.slice(1).map((stop,i)=>{
     const a=stops[i].place,b=stop.place;
-    const airports=stop.mode==="flight"&&stop.incomingFlight?.departure&&stop.incomingFlight?.arrival?[stop.incomingFlight.departure,stop.incomingFlight.arrival]:[];
+    const flight=stop.mode==="flight"?stop.incomingFlight:undefined;
+    const airports=flight?.waypoints??(flight?.segments?.length&&flight.segments.length>1?[]:flight?.departure&&flight?.arrival?[flight.departure,flight.arrival]:[]);
     const waypoints=[a,...airports,b];
     return waypoints.slice(1).flatMap((target,k)=>{
       const origin=waypoints[k];const interpolate=geoInterpolate([origin.lon,origin.lat],[target.lon,target.lat]);
