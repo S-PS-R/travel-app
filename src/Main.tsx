@@ -30,6 +30,8 @@ import {
 import { supabase, loadTrips, persistTrip, removeTrip } from "./storage";
 import { useAgentTools } from "./useAgentTools";
 import { authRedirect, googleEnabled, listenForAuthLinks, signInWithGoogle } from "./auth";
+import FriendsPanel from './FriendsPanel';
+import {parseFriendPins,type FriendPin} from './friendsModel';
 export default function App() {
   const {colors,s,mode,toggleTheme,themeError}=useTheme();
   const { width } = useWindowDimensions();
@@ -58,6 +60,24 @@ export default function App() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [recovery, setRecovery] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showFriends,setShowFriends]=useState(false);
+  const [friendsRevision,setFriendsRevision]=useState(0);
+  const [friendsError,setFriendsError]=useState('');
+  const [shared,setShared]=useState<{userId:string;pins:FriendPin[]}|null>(null);
+  const friendPins=showFriends&&shared?.userId===session?.user.id?shared?.pins??[]:[];
+  useEffect(()=>{
+    const userId=session?.user.id;let alive=true,inFlight=false;
+    setShared(null);setFriendsError('');
+    if(!userId||!showFriends||!supabase)return;
+    async function refresh(){
+      if(inFlight)return;inFlight=true;
+      try{const {data,error}=await supabase!.rpc('friend_map_pins');if(!alive)return;if(error)throw error;setShared({userId:userId!,pins:parseFriendPins(data)});setFriendsError('');}
+      catch{if(alive){setShared(null);setFriendsError('Friends’ locations could not load. Open My account → Friends to refresh or check setup.');}}
+      finally{inFlight=false;}
+    }
+    void refresh();const timer=setInterval(()=>void refresh(),30000);
+    return()=>{alive=false;clearInterval(timer);};
+  },[session?.user.id,showFriends,friendsRevision]);
   const owner = useRef<string | undefined>(undefined);
   const revision = useRef(0);
   useEffect(() => {
@@ -70,6 +90,7 @@ export default function App() {
         owner.current = next?.user.id;
         revision.current++;
         setTrips([]);
+        setShowFriends(false);setShared(null);setFriendsError('');
         setDetail(null);
         setSelected(null);
         setEditor(null);
@@ -326,10 +347,10 @@ export default function App() {
             setAccount(true);
           }}
         >
-          {session ? "My account" : "Local explorer"}
+          {session ? "My account" : "Sign in / Create account"}
         </Button></View>
       </View>
-      {plannerOpened && <View style={{flex:1,display:tab === "plan" || tab === "upcoming" ? "flex" : "none"}}><TravelPlanner view={tab === "upcoming" ? "upcoming" : "plan"} onNavigate={setTab}/></View>}
+      {plannerOpened && authReady && <View style={{flex:1,display:tab === "plan" || tab === "upcoming" ? "flex" : "none"}}><TravelPlanner key={session?.user.id??'guest'} userId={session?.user.id} view={tab === "upcoming" ? "upcoming" : "plan"} onNavigate={setTab}/></View>}
       <ScrollView
         style={{display:tab === "plan" || tab === "upcoming" ? "none" : "flex"}}
         contentContainerStyle={{
@@ -446,8 +467,17 @@ export default function App() {
                 }}
               >
                 <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={[s.card,{gap:12,marginBottom:12}]}>
+                    <Text style={s.eyebrow}>MAP LEGEND</Text>
+                    <View style={[s.row,{flexWrap:'wrap'}]}>{[false,true].map(value=><Pressable key={String(value)} accessibilityRole="radio" accessibilityState={{checked:showFriends===value,disabled:value&&!session}} disabled={value&&!session} onPress={()=>setShowFriends(value)} style={[s.button,{backgroundColor:showFriends===value?colors.pale:colors.surface}]}><Text style={s.body}>{value?'Me + friends':'Only me'}</Text></Pressable>)}</View>
+                    <Text style={s.muted}>● Gold: your places · <Text style={{color:'#b998ff'}}>● Purple: friends’ places</Text></Text>
+                    {!session&&<Text style={s.muted}>Sign in to add friends and see shared places.</Text>}
+                    {showFriends&&<Text style={s.muted}>{friendPins.length} shared locations · only accepted friends</Text>}
+                    {!!friendsError&&<Text accessibilityRole="alert" style={s.error}>{friendsError}</Text>}
+                  </View>
                   <WorldMap
                     trips={shown}
+                    friendPins={friendPins}
                     selected={selected ? placeKey(selected) : null}
                     onSelect={setSelected}
                   />
@@ -459,6 +489,7 @@ export default function App() {
                   <Text style={s.subtitle}>
                     {selected ? selected.city : "Where have you been?"}
                   </Text>
+                  {selected&&friendPins.filter(f=>placeKey(f.place)===placeKey(selected)).map((f,i)=><Text key={`${f.ownerId}-${i}`} style={s.muted}>{f.name} has visited this place.</Text>)}
                   <Text style={s.muted}>
                     {selected
                       ? selected.country
@@ -809,6 +840,7 @@ export default function App() {
                     Your trips are saved to your account. Local trips remain
                     separately on this device.
                   </Text>
+                  <FriendsPanel key={session.user.id} onChanged={()=>{setShared(null);setFriendsRevision(r=>r+1);}}/>
                   <Button
                     disabled={authBusy}
                     onPress={() => accountAction("signout")}
@@ -822,7 +854,9 @@ export default function App() {
                     Sign in to save trips across devices. Device-local trips
                     stay separate from your account.
                   </Text>
-                  {googleEnabled && <Button disabled={authBusy} onPress={() => accountAction("google")}>Continue with Google</Button>}
+                  <Button disabled={authBusy||!googleEnabled} onPress={() => accountAction("google")}>Continue with Google</Button>
+                  {!googleEnabled&&<Text style={s.muted}>Google sign-in is being set up.</Text>}
+                  <Text style={s.muted}>Your first Google sign-in creates your account automatically.</Text>
                   <Field
                     label="Email"
                     autoCapitalize="none"

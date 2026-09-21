@@ -52,7 +52,7 @@ Photos currently live inside the private trip record as small image data URLs. W
 1. In Google Cloud, choose/create the app's project and configure Google Auth Platform branding/audience. Use `Veyfar` as the app name, your own support email, and only basic identity scopes. If the OAuth app is in testing, add your intended test Google accounts.
 2. Create a Web application OAuth client. Set its authorized redirect URI to `https://evzymkqaeopozmdikmmo.supabase.co/auth/v1/callback` (Supabase's callback, distinct from the app redirects above).
 3. In Supabase → Authentication → Sign In / Providers → Google, enter the client ID and client secret directly, enable Google, and save. Do not put the secret in `.env`, Git, or chat.
-4. Set `EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=true` locally and restart Expo. Then verify login, cancellation, reload, logout, and separate users' trips. Keep the button hidden until the provider is ready.
+4. Set `EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=true` locally and restart Expo. Then verify login, cancellation, reload, logout, and separate users' trips. Keep the button disabled until the provider is ready.
 
 Sources: https://supabase.com/docs/guides/auth/social-login/auth-google and https://docs.expo.dev/versions/v57.0.0/sdk/securestore/
 
@@ -75,3 +75,25 @@ ISOLATION_TEST_ALLOW_WRITES=yes
 Then run `node scripts/check-account-isolation.mjs`. The explicit write flag prevents accidental execution. A failure is a release blocker; rerun after fixing policies. This test validates the database/API boundary, not every device/session/UI security concern.
 
 Local guest trips are intentionally device-local and are not protected by a cloud login. On a shared device, someone with access to the browser/app profile can read them. Guest history is not automatically uploaded into an account.
+
+## Google accounts and friends — September 20 implementation
+
+The UI includes Google account creation/sign-in and an account Friends panel. Google remains disabled until the OAuth client is configured in Supabase; no successful Google login is claimed yet. Migration `003_friends.sql` is prepared and locally tested, but has not yet been applied to the live project.
+
+- Google automatically creates an account on first login. Only basic identity scopes are needed; the app does not read Gmail or contacts.
+- Add a friend using their exact verified Gmail address. Requests appear inside the app; no invitation email is sent. The recipient must accept before either person can see the other's visited locations. Either person can cancel, decline or remove a connection.
+- My world has **Only me** and **Me + friends** controls: gold own pins, purple friend pins. Shared pins refresh while enabled, at most once every 30 seconds. Removal revokes database access immediately; an already displayed remote copy can remain until its next refresh. Previously seen locations cannot be made unseen.
+- The database exposes only names and visited city/country coordinates to accepted friends. It excludes future arrivals and never grants friends access to private trip records, notes, photos, stays or flight bookings. The map toggle controls viewing, not sharing consent; remove a friend to revoke sharing.
+- Requests require a confirmed account and are limited to ten per hour. Exact-address matching is not a browsable directory, but outgoing request listings reveal successful matches. Gmail dots and plus aliases are not canonicalized; use the address attached to the account.
+- Account switching clears shared pins and remounts the planner. Upcoming plans are stored locally under separate account IDs, with existing guest plans kept in the guest library. Browser/device storage is not encryption or a boundary against someone who controls that device. Planned trips are not yet synchronized across devices.
+
+### Remaining setup
+
+1. Apply `supabase/migrations/003_friends.sql` once, after 001 and 002. It creates relationship tables and restricted functions; existing trip owner policies remain intact.
+2. Create a Google Web OAuth client using the callback `https://evzymkqaeopozmdikmmo.supabase.co/auth/v1/callback`. Enter its ID and secret directly in Supabase's Google provider settings.
+3. Add the exact app redirect `http://127.0.0.1:8081/` alongside the existing localhost/native redirects. Add the eventual HTTPS production origin before release.
+4. After the provider is enabled, set `EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=true` in the ignored local `.env`, restart Expo, and test two real accounts: login, reload, logout, request, accept, map toggle, removal and account switching.
+
+### Local validation
+
+`node --test tests/*.test.mjs` covers input and shared-data parsing. For isolated SQL checks, install `@electric-sql/pglite` in `.expo/rls-test` (an ignored temporary directory), then run `node scripts/check-friends-local.mjs`. This creates an in-memory database with a simulated Auth schema and runs all three migrations. Pending requests, outsider and anonymous denial, recipient-only acceptance, direct mutation denial, accepted pin projection, private-trip isolation, future-date exclusion, removal and request limits pass. This does not replace real Supabase Auth/API testing.

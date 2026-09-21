@@ -11,4 +11,4 @@ After each major feature change, verify the implementation, commit the current p
 
 The repository is intentionally **public**, as requested by its owner.
 
-Current priority: interactive maps and globe-based travel planning. Accounts and friends are deferred until this UI milestone is reviewed.
+Current priority: Google sign-in through Supabase and consent-based friend map sharing. Apply and verify the friend database migration and configure Google OAuth before calling account setup complete.

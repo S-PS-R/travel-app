@@ -12,7 +12,8 @@ import DateField from "./DateField";
 import { Button, Field, useTheme } from "./ui";
 import WorldMap from "./WorldMap";
 
-export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";onNavigate:(view:"plan"|"upcoming")=>void}) {
+export default function TravelPlanner({view,onNavigate,userId}:{view:"plan"|"upcoming";onNavigate:(view:"plan"|"upcoming")=>void;userId?:string}) {
+  const storageKey=userId?`${PLAN_LIBRARY_KEY}.${userId}`:PLAN_LIBRARY_KEY;
   const { s, colors } = useTheme();
   const compact = useWindowDimensions().width < 1050;
   const [plan, setPlan] = useState<TravelPlan>(emptyPlan);
@@ -33,8 +34,8 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
   const route=useMemo(()=>mapRoute(plan),[plan]);
   useEffect(() => {
     let alive = true;
-    AsyncStorage.getItem(PLAN_LIBRARY_KEY).then(async raw => {
-      const data=loadPlanLibrary(raw,raw===null?await AsyncStorage.getItem(LEGACY_PLAN_KEY):null);
+    AsyncStorage.getItem(storageKey).then(async raw => {
+      const data=loadPlanLibrary(raw,raw===null&&!userId?await AsyncStorage.getItem(LEGACY_PLAN_KEY):null);
       if(alive) {setLibrary(data);if(data.plans[0]){setPlan(data.plans[0]);setEditingId(data.plans[0].id);}}
     })
       .catch(() => { if (alive) { setFailed(true);setMessage("Your saved plan could not be loaded. Reopen the app to retry; the saved copy has not been changed."); } })
@@ -51,7 +52,7 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
     setBusy(true); setMessage("");
     try {
       const id=editingId??uid();const next=saveToLibrary(library,plan,id);
-      await AsyncStorage.setItem(PLAN_LIBRARY_KEY, JSON.stringify(next));
+      await AsyncStorage.setItem(storageKey, JSON.stringify(next));
       setLibrary(next);setEditingId(id);setDirty(false);setMessage("Saved to Upcoming trips on this device.");
     }
     catch (error) { setMessage(error instanceof Error?error.message:"Could not save the plan. Your changes are still here; please try again."); }
@@ -69,7 +70,7 @@ export default function TravelPlanner({view,onNavigate}:{view:"plan"|"upcoming";
     setBusy(true);setMessage("");
     try {
       const next:PlanLibrary={version:2,plans:library.plans.filter(p=>p.id!==id)};
-      await AsyncStorage.setItem(PLAN_LIBRARY_KEY,JSON.stringify(next));setLibrary(next);setDeleteId(null);
+      await AsyncStorage.setItem(storageKey,JSON.stringify(next));setLibrary(next);setDeleteId(null);
       if(id===editingId){setEditingId(null);setPlan(emptyPlan());setDirty(false);setSelected(null);}
     }catch{setMessage("Could not remove this plan. Please try again.");}finally{setBusy(false);}
   }

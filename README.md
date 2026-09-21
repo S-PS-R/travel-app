@@ -43,7 +43,7 @@ The local app is connected to your Supabase project. The trips migrations and de
 
 1. Create your own Supabase project.
 2. Run `supabase/migrations/001_trips.sql`, then `002_account_isolation.sql`, in its SQL editor.
-3. Enable email/password and configure production SMTP before opening signup to users outside your project team. Keep email confirmation enabled. Set the Auth Site URL and exact redirect allowlist to your app. Recovery links use PKCE and must open in the same browser/app. Google sign-in is implemented but hidden until its provider is configured and `EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=true`; see the account guide for setup.
+3. Enable email/password and configure production SMTP before opening signup to users outside your project team. Keep email confirmation enabled. Set the Auth Site URL and exact redirect allowlist to your app. Recovery links use PKCE and must open in the same browser/app. Google sign-in is implemented but disabled until its provider is configured and `EXPO_PUBLIC_GOOGLE_AUTH_ENABLED=true`; see the account guide for setup.
 4. Copy `.env.example` to `.env` and set the project URL and **publishable** key from Supabase’s project settings. Never use a service-role/secret key in this app.
 5. Restart Expo. The account screen now offers sign-in and account creation.
 
@@ -80,7 +80,7 @@ GitHub stores the source and runs checks; it does not automatically publish an i
 - `supabase/migrations/001_trips.sql`: owner-isolated database table.
 - `ASSETS.md`: image and map attribution.
 
-Current priority: maps and travel planning; accounts and friends are deferred. Route lines use geographic arcs and direct distances for every mode, not actual road/rail/ferry routing, schedules, or travel times. Save plan adds or updates a journey in Upcoming trips, where you can reopen, edit or remove it and start another. Optional start/end dates use calendar pickers. Plans remain on this device (separate from account trip journals); the previous single saved plan is imported automatically and its original storage is retained. Save before closing or reloading; unsaved work survives switching tabs, and opening another plan asks before discarding changes.
+Google sign-in and friend map sharing are implemented locally; provider configuration and migration 003 are still required. See [account setup](docs/ACCOUNTS.md). Route lines use geographic arcs and direct distances for every mode, not actual road/rail/ferry routing, schedules, or travel times. Save plan adds or updates a journey in Upcoming trips, where you can reopen, edit or remove it and start another. Optional start/end dates use calendar pickers. Plans remain on this device (separate from account trip journals); guest plans remain separate from account-scoped local plans; the previous single saved guest plan is imported automatically and its original storage is retained. Save before closing or reloading; unsaved work survives switching tabs, and opening another plan asks before discarding changes.
 
 Both destination forms use an offline catalog of over 1,250 capitals and major cities, plus curated travel destinations. Web autocomplete selects the suggested suffix as you type: keep typing to replace it, accept it with Tab/Right Arrow, or use Up/Down and Enter to add a suggestion. Suggestions sit immediately below the input. Search ignores accents and supports common alternate spellings such as Katmandu. Journal arrival/departure fields support calendar selection and typed dates.
 

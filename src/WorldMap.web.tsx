@@ -64,6 +64,9 @@ export default function WorldMap(props: WorldMapProps) {
       m.addLayer({ id: "veyfar-route-glow", type: "line", source: "veyfar-route", paint: { "line-color": ["get", "color"], "line-width": 8, "line-opacity": 0.1 } });
       m.addLayer({ id: "veyfar-route-line", type: "line", source: "veyfar-route", paint: { "line-color": ["get", "color"], "line-width": 2.4, "line-dasharray": [2, 2] } });
       m.addSource("veyfar-pins", { type: "geojson", data: empty });
+      m.addSource("veyfar-friends", {type:"geojson",data:empty});
+      m.addLayer({id:"veyfar-friend-pin",type:"circle",source:"veyfar-friends",paint:{"circle-radius":10,"circle-color":"#b998ff","circle-opacity":0.65,"circle-stroke-color":"#e5d9ff","circle-stroke-width":2}});
+      m.addLayer({id:"veyfar-friend-label",type:"symbol",source:"veyfar-friends",layout:{"text-field":["get","label"],"text-size":12,"text-offset":[0,-1.5],"text-anchor":"bottom"},paint:{"text-color":"#e5d9ff","text-halo-color":"#07162e","text-halo-width":2}});
       m.addLayer({ id: "veyfar-pin-halo", type: "circle", source: "veyfar-pins", paint: { "circle-radius": 13, "circle-color": "#91e0cc", "circle-opacity": 0.12 } });
       m.addLayer({ id: "veyfar-pin", type: "circle", source: "veyfar-pins", paint: { "circle-radius": ["case", ["get", "active"], 8, 5], "circle-color": "#f5cba0", "circle-stroke-color": "#ffffff", "circle-stroke-width": 2 } });
       m.addLayer({ id: "veyfar-pin-label", type: "symbol", source: "veyfar-pins", layout: { "text-field": ["get", "label"], "text-size": 13, "text-offset": [0, 1.4], "text-anchor": "top" }, paint: { "text-color": "#ffffff", "text-halo-color": "#07162e", "text-halo-width": 2 } });
@@ -77,7 +80,7 @@ export default function WorldMap(props: WorldMapProps) {
       m.on("movestart", () => setHover(null));
       m.on("zoomend", () => setZoom(m.getZoom()));
       m.on("click", (e) => {
-        const pin = m.queryRenderedFeatures(e.point, { layers: ["veyfar-pin"] })[0];
+        const pin = m.queryRenderedFeatures(e.point, { layers: ["veyfar-pin","veyfar-friend-pin"] })[0];
         if (pin) {
           const p = JSON.parse(pin.properties.place) as Place;
           latest.current.onSelect(p);
@@ -113,6 +116,7 @@ export default function WorldMap(props: WorldMapProps) {
     const points = props.planner ? (props.route ?? []).map(st => st.place) : Array.from(new Map(props.trips.flatMap(t => t.stops).map(st => [placeKey(st.place), st.place])).values());
     const pins: GeoJSON.FeatureCollection<GeoJSON.Point> = { type: "FeatureCollection", features: points.map((p, i) => ({ type: "Feature", geometry: { type: "Point", coordinates: [p.lon, p.lat] }, properties: { label: props.planner ? `${i+1} · ${p.city}` : p.city, active: props.selected === placeKey(p), place: JSON.stringify(p) } })) };
     (m.getSource("veyfar-pins") as GeoJSONSource).setData(pins);
+    (m.getSource("veyfar-friends") as GeoJSONSource).setData({type:"FeatureCollection",features:(props.friendPins??[]).map(f=>({type:"Feature",geometry:{type:"Point",coordinates:[f.place.lon,f.place.lat]},properties:{label:`${f.name} · ${f.place.city}`,place:JSON.stringify(f.place)}}))});
     const lines: GeoJSON.Feature<GeoJSON.LineString>[] = [];
     const badges: maplibregl.Marker[] = [];
     const segments=routeSegments(props.route??[]);
@@ -133,7 +137,7 @@ export default function WorldMap(props: WorldMapProps) {
     const ids = props.trips.flatMap(t => t.stops.filter(isVisited).map(st => st.place.countryId.padStart(3,"0")));
     m.setFilter("veyfar-visited", ["in", ["get", "ISO_N3"], ["literal", ids]]);
     return () => badges.forEach(b => b.remove());
-  }, [props.trips, props.route, props.selected, props.planner, ready]);
+  }, [props.trips, props.route, props.selected, props.planner, props.friendPins, ready]);
 
   useEffect(() => {
     if (!ready || !props.selected) return;
