@@ -31,14 +31,14 @@ const server=http.createServer(async(req,res)=>{
   try {
     let body='';for await(const chunk of req){body+=chunk;if(body.length>2048){send(413,{error:'Request too large.'});return;}}
     let input;try{input=JSON.parse(body);}catch{send(400,{error:'Invalid request.'});return;}
-    if(!['from','to','date'].every(k=>typeof input?.[k]==='string')||(input.number!==undefined&&typeof input.number!=='string')){send(400,{error:'Departure airport, arrival airport and date are required.'});return;}
-    const query=searchQuery(input.from,input.to,input.date,input.number||''),cacheKey=`${query.from}:${query.to}:${query.date}`;
+    if(!['from','to','date','airline'].every(k=>typeof input?.[k]==='string')||!input.airline.trim()||(input.number!==undefined&&typeof input.number!=='string')){send(400,{error:'Airline, departure airport, arrival airport and date are required.'});return;}
+    const query=searchQuery(input.from,input.to,input.date,input.number||'',undefined,input.airline),cacheKey=`${query.from}:${query.to}:${query.date}:${query.airline}`;
     const cached=flightCache.get(cacheKey);
     const filtered=value=>({flights:query.number?value.filter(f=>f.segments.some(s=>s.number===query.number)):value});
     if(cached&&Date.now()-cached.time<60*60*1000){send(200,filtered(cached.value));return;}
     while(calls.length&&Date.now()-calls[0]>60000)calls.shift();
     if(calls.length>=5){send(429,{error:'Please wait a minute before looking up more flights.'});return;}calls.push(Date.now());
-    const raw=await search({engine:'google_flights',departure_id:query.from,arrival_id:query.to,outbound_date:query.date,type:'2',currency:'USD',hl:'en',adults:'1'});
+    const raw=await search({engine:'google_flights',departure_id:query.from,arrival_id:query.to,outbound_date:query.date,include_airlines:query.airline,type:'2',currency:'USD',hl:'en',adults:'1',show_hidden:'true'});
     const result=normalizeSearchResponse(raw,{...query,number:''});
     if(flightCache.size>=100)flightCache.delete(flightCache.keys().next().value);
     flightCache.set(cacheKey,{time:Date.now(),value:result});send(200,filtered(result));

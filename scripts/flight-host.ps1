@@ -8,7 +8,7 @@ if (Test-Path -LiteralPath $flightState) {
     if ($candidate -and $candidate.StartTime.ToUniversalTime().Ticks.ToString() -eq $record.started -and $candidate.Path -eq $record.executable) { $flightProcess = $candidate }
 }
 if ($Action -eq 'stop') {
-    if ($flightProcess) { $flightProcess | Stop-Process; Write-Host 'Flight lookup stopped.' }
+    if ($flightProcess) { $flightProcess | Stop-Process -ErrorAction Stop; Write-Host 'Flight lookup stopped.' }
     if (Test-Path -LiteralPath $flightState) { Remove-Item -LiteralPath $flightState }
     return
 }

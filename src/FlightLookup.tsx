@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { View, Text, Platform, ScrollView } from "react-native";
-import { Button, Field, useTheme } from "./ui";
+import { Button, useTheme } from "./ui";
 import { isFlightRecord, type FlightRecord } from "./flightModel";
-import { nearbyAirports, searchQuery } from "./flightSearch";
-import type { Place } from "./model";
+import { resolveAirline, searchQuery } from "./flightSearch";
+
 
 export function FlightSummary({flight}:{flight:FlightRecord}) {
   const {s}=useTheme();
@@ -17,19 +17,17 @@ export function FlightSummary({flight}:{flight:FlightRecord}) {
     <Text style={[s.muted,{fontSize:12}]}>{flight.waypoints?.length?"Map shows airport connections, including layovers, as geographic arcs—not a flown track.":"Map is a geographic preview; complete airport routing may be unavailable."}</Text>
   </View>;
 }
-export default function FlightLookup({number,date,fromPlace,toPlace,disabled,onUse}:{number:string;date:string;fromPlace:Place;toPlace:Place;disabled:boolean;onUse:(flight:FlightRecord)=>void}) {
+export default function FlightLookup({airline,date,from,to,disabled,onUse}:{airline:string;date:string;from:string;to:string;disabled:boolean;onUse:(flight:FlightRecord)=>void}) {
   const {s}=useTheme();
-  const origins=useMemo(()=>nearbyAirports(fromPlace),[fromPlace.lat,fromPlace.lon]);
-  const destinations=useMemo(()=>nearbyAirports(toPlace),[toPlace.lat,toPlace.lon]);
-  const [from,setFrom]=useState(origins[0]?.code??""),[to,setTo]=useState(destinations[0]?.code??"");
-  const [filter,setFilter]=useState(number.includes('/')?'':number);
   const [busy,setBusy]=useState(false),[error,setError]=useState("");const [results,setResults]=useState<FlightRecord[]|null>(null);
   const abort=useRef<AbortController|null>(null);useEffect(()=>()=>abort.current?.abort(),[]);
   const invalidate=()=>{abort.current?.abort();abort.current=null;setBusy(false);setResults(null);setError("");};
   async function lookup(){
     invalidate();const controller=new AbortController();abort.current=controller;setBusy(true);
     try {
-      const query=searchQuery(from,to,date,filter);
+      const carrier=resolveAirline(airline);
+      if(!carrier)throw new Error("Enter an airline name or its two-character code, such as American Airlines or AA.");
+      const query=searchQuery(from,to,date,'',undefined,carrier);
       const local=Platform.OS==="web"&&typeof location!=="undefined"&&["127.0.0.1","127.0.0.2","localhost"].includes(location.hostname);
       const base=process.env.EXPO_PUBLIC_FLIGHT_LOOKUP_URL||(local?"http://127.0.0.1:8082":"");
       if(!base)throw new Error("Flight search is available in the local website. You can save details manually here.");
@@ -41,18 +39,11 @@ export default function FlightLookup({number,date,fromPlace,toPlace,disabled,onU
     finally{if(!controller.signal.aborted)setBusy(false);}
   }
   return <View style={{gap:12}}>
-    <Text style={s.eyebrow}>FIND FUTURE FLIGHTS</Text>
-    <Text style={s.muted}>Confirm your airports. Nearby suggestions are based on distance from each trip stop.</Text>
-    <Field label="Search departure airport code" value={from} maxLength={3} editable={!disabled} onChangeText={v=>{invalidate();setFrom(v.toUpperCase());}}/>
-    <View style={{gap:6}}>{origins.map(a=><Button key={a.code} quiet disabled={disabled} onPress={()=>{invalidate();setFrom(a.code);}}>{a.code} · {a.name}</Button>)}</View>
-    <Field label="Search arrival airport code" value={to} maxLength={3} editable={!disabled} onChangeText={v=>{invalidate();setTo(v.toUpperCase());}}/>
-    <View style={{gap:6}}>{destinations.map(a=><Button key={a.code} quiet disabled={disabled} onPress={()=>{invalidate();setTo(a.code);}}>{a.code} · {a.name}</Button>)}</View>
-    <Field label="Filter flight number (optional)" value={filter} maxLength={12} editable={!disabled} placeholder="e.g. AA100" onChangeText={v=>{invalidate();setFilter(v);}}/>
-    <Button disabled={disabled||busy} onPress={lookup}>{busy?"Searching flights…":"Search future flights"}</Button>
-    <Text style={[s.muted,{fontSize:12}]}>Uses the departure date above. One-way fares for one adult in economy, USD. Search runs only when clicked; no booking is made.</Text>
+    <Button disabled={disabled||busy} onPress={lookup}>{busy?"Searching flights…":"Search flights"}</Button>
+    <Text style={[s.muted,{fontSize:12}]}>Searches the entered airline, route and departure date. One-way fares for one adult in economy, USD. Search runs only when clicked; no booking is made.</Text>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    {results?.length===0&&<Text accessibilityRole="alert" style={s.muted}>No matching itineraries returned. Try another airport or date, clear the flight-number filter, or enter details manually. Results are not exhaustive.</Text>}
-    {results&&results.length>0&&<Text style={s.body}>{results.length} itineraries · choose one to save with this connection</Text>}
+    {results?.length===0&&<Text accessibilityRole="alert" style={s.muted}>No matching itineraries returned. Try another airport or date, check the airline, or enter details manually. Results are not exhaustive.</Text>}
+    {results&&results.length>0&&<Text style={s.body}>{results.length} itineraries · choose one to fill the flight number and departure time</Text>}
     {!!results?.length&&<ScrollView nestedScrollEnabled style={{maxHeight:640}} contentContainerStyle={{gap:12}}>{results.map((flight,i)=><View key={i} style={[s.card,{gap:12}]}><FlightSummary flight={flight}/><Button disabled={disabled} onPress={()=>{onUse(flight);setResults(null);}}>Use itinerary {i+1}</Button></View>)}</ScrollView>}
   </View>;
 }

@@ -1,12 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {searchQuery,normalizeSearchResponse,nearbyAirports} from '../src/flightSearch.ts';
+import {searchQuery,normalizeSearchResponse,nearbyAirports,resolveAirline} from '../src/flightSearch.ts';
 import {isFlightRecord} from '../src/flightModel.ts';
 import {parsePlan,mapRoute} from '../src/plannerModel.ts';
 import {routePoints} from '../src/routeGeometry.ts';
 const query=()=>searchQuery('jfk','lhr','2027-01-10','','2026-09-20');
 const segment=(from,to,dep,arr,number)=>({flight_number:number,airline:'Test airline',departure_airport:{id:from,name:from,time:dep},arrival_airport:{id:to,name:to,time:arr},duration:120,airplane:'Test aircraft'});
 const offer={flights:[segment('JFK','BOS','2027-01-10 10:00','2027-01-10 12:00','AA 10'),segment('BOS','LHR','2027-01-10 14:00','2027-01-11 02:00','AA 20')],total_duration:660,price:500};
+
+test('airline names and IATA codes resolve for route/date searches',()=>{
+ assert.equal(resolveAirline('American Airlines'),'AA');assert.equal(resolveAirline(' aa '),'AA');assert.equal(resolveAirline('Indigo'),'6E');assert.equal(resolveAirline('easyJet'),'U2');
+ assert.throws(()=>resolveAirline('Unrecognized airline'),/two-character/);
+ assert.equal(searchQuery('JFK','LHR','2027-01-10','','2026-09-20','American Airlines').airline,'AA');
+});
 test('search validates airports, date and optional full flight number',()=>{
   assert.equal(query().from,'JFK');assert.equal(query().number,'');
   assert.throws(()=>searchQuery('JFK','JFK','2027-01-10'),/different/);
@@ -23,6 +29,8 @@ test('connecting itinerary retains segments and layover geometry through save/re
   const plan=parsePlan(JSON.stringify({title:'Test',stops,legs:[{fromId:'a',toId:'b',mode:'flight',flight}]}));
   const points=routePoints(mapRoute(plan));const boston=flight.waypoints[1];assert.ok(points.some(p=>Math.abs(p[0]-boston.lon)<.00001&&Math.abs(p[1]-boston.lat)<.00001));
   assert.equal(normalizeSearchResponse({best_flights:[offer],other_flights:[offer]},query()).length,1);
+  assert.equal(normalizeSearchResponse({best_flights:[offer]},{...query(),airline:'AA'}).length,1);
+  assert.equal(normalizeSearchResponse({best_flights:[offer]},{...query(),airline:'BA'}).length,0);
 });
 test('wrong dates, routes, disconnected segments and unmatched flight numbers are excluded',()=>{
   for(const q of [{...query(),date:'2027-01-11'},{...query(),to:'CDG'},{...query(),number:'AA999'}])assert.deepEqual(normalizeSearchResponse({best_flights:[offer]},q),[]);

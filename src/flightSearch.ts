@@ -1,13 +1,22 @@
 import airports from '../assets/airports.json' with {type:'json'};
 import {flightQuery,normalizeFlightNumber,isFlightRecord,type FlightRecord,type FlightSegment} from './flightModel.ts';
-export function searchQuery(from:string,to:string,date:string,number='',today=new Date().toISOString().slice(0,10)) {
+const airlines:Record<string,string>={americanairlines:'AA',american:'AA',unitedairlines:'UA',united:'UA',deltaairlines:'DL',deltaairlinesinc:'DL',delta:'DL',britishairways:'BA',virginatlantic:'VS',airindia:'AI',indigo:'6E',emirates:'EK',qatarairways:'QR',qatar:'QR',etihadairways:'EY',etihad:'EY',singaporeairlines:'SQ',lufthansa:'LH',airfrance:'AF',klm:'KL',turkishairlines:'TK',aircanada:'AC',southwestairlines:'WN',southwest:'WN',jetblue:'B6',alaskaairlines:'AS',qantas:'QF',icelandair:'FI',aerlingus:'EI',finnair:'AY',iberia:'IB',swiss:'LX',cathaypacific:'CX',japanairlines:'JL',ana:'NH',allnipponairways:'NH',koreanair:'KE',ryanair:'FR',easyjet:'U2',tapairportugal:'TP',tapportugal:'TP'};
+export function resolveAirline(value:string):string {
+  if(!value.trim())return '';
+  const code=value.trim().toUpperCase();
+  if(/^(?:[A-Z]{2}|[A-Z][0-9]|[0-9][A-Z])$/.test(code))return code;
+  const known=airlines[value.toLowerCase().replace(/[^a-z0-9]/g,'')];
+  if(!known)throw new Error('Airline name not recognized. Enter its two-character airline code, for example AA.');
+  return known;
+}
+export function searchQuery(from:string,to:string,date:string,number='',today=new Date().toISOString().slice(0,10),airline='') {
   const departure=from.trim().toUpperCase(),arrival=to.trim().toUpperCase();
   if(!/^[A-Z]{3}$/.test(departure)||!airports.some(a=>a.code===departure)||!/^[A-Z]{3}$/.test(arrival)||!airports.some(a=>a.code===arrival))throw new Error('Choose valid three-letter airport codes, for example JFK and LHR.');
   if(departure===arrival)throw new Error('Choose different departure and arrival airports.');
   flightQuery('AA1',date);
   if(date<today)throw new Error('Choose today or a future departure date.');
   const normalized=number.trim()?flightQuery(number,date).number:'';
-  return {from:departure,to:arrival,date,number:normalized};
+  return {from:departure,to:arrival,date,number:normalized,airline:resolveAirline(airline)};
 }
 export function nearbyAirports(place:{lat:number;lon:number}) {
   const r=Math.PI/180;
@@ -24,6 +33,8 @@ export function normalizeSearchResponse(data:any,query:ReturnType<typeof searchQ
     if(first?.departure_airport?.id!==query.from||last?.arrival_airport?.id!==query.to||text(first?.departure_airport?.time).slice(0,10)!==query.date)continue;
     if(raw.some((s:any,i:number)=>!s?.flight_number||!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s?.departure_airport?.time)||!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s?.arrival_airport?.time)||(i>0&&s.departure_airport.id!==raw[i-1].arrival_airport?.id)))continue;
     const segments:FlightSegment[]=raw.map((s:any)=>({number:normalizeFlightNumber(text(s.flight_number)),airline:text(s.airline),from:text(s.departure_airport.id),to:text(s.arrival_airport.id),departure:text(s.departure_airport.time),arrival:text(s.arrival_airport.time),duration:text(s.duration),aircraft:text(s.airplane)}));
+    // Google can include partner-operated flights; keep the requested departure carrier.
+    if(query.airline&&segments[0].number.slice(0,2)!==query.airline)continue;
     if(query.number&&!segments.some(s=>s.number===query.number))continue;
     const id=JSON.stringify(segments);if(seen.has(id))continue;seen.add(id);
     const points=[airport(segments[0].from),...segments.map(s=>airport(s.to))];
