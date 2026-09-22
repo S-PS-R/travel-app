@@ -97,3 +97,9 @@ The UI includes Google account creation/sign-in and an account Friends panel. Go
 ### Local validation
 
 `node --test tests/*.test.mjs` covers input and shared-data parsing. For isolated SQL checks, install `@electric-sql/pglite` in `.expo/rls-test` (an ignored temporary directory), then run `node scripts/check-friends-local.mjs`. This creates an in-memory database with a simulated Auth schema and runs all three migrations. Pending requests, outsider and anonymous denial, recipient-only acceptance, direct mutation denial, accepted pin projection, private-trip isolation, future-date exclusion, removal and request limits pass. This does not replace real Supabase Auth/API testing.
+
+## September 21 Google provider configuration
+
+Created the Veyfar Web OAuth client in Google Cloud project `veyfar`, with origin `http://localhost:8081` and callback `https://evzymkqaeopozmdikmmo.supabase.co/auth/v1/callback`. The owner entered credentials directly in Supabase; its Google provider now shows Enabled. Added the exact app redirect `http://127.0.0.1:8081/`, retaining localhost and native redirects. Enabled the local ignored `.env` Google flag. Credentials are not stored in the repository. Full sign-in and account isolation still require an interactive login test. Friend migration 003 remains pending, as documented above.
+
+Verified the restarted app's Google button is enabled and redirects successfully to Google's account chooser for this Supabase project. The first account selection/consent and return-session test are awaiting the owner; no completed login is claimed yet.
