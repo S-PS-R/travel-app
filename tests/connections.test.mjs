@@ -11,6 +11,17 @@ test('disconnected land excludes ground modes, connected continents retain them'
   for(const [a,b] of [[ny,london],[tokyo,ny],[place('Sydney',-33.86,151.2),place('Auckland',-36.85,174.76)]])assert.deepEqual(availableTransports(a,b),['flight','ferry']);
   for(const [a,b] of [[london,paris],[ny,place('SF',37.77,-122.4)],[paris,place('Delhi',28.6,77.2)]])assert.ok(availableTransports(a,b).includes('train'));
 });
+
+test('same-landmass routes hide ferry in both directions but sea crossings retain it',()=>{
+  for(const [a,b] of [[paris,place('Berlin',52.52,13.405)],[ny,place('SF',37.77,-122.4)]]) {
+    for(const [from,to] of [[a,b],[b,a]]) {
+      assert.equal(availableTransports(from,to).includes('ferry'),false);
+      assert.ok(availableTransports(from,to).includes('car'));
+    }
+  }
+  assert.ok(availableTransports(london,paris).includes('ferry'));
+  assert.ok(availableTransports(ny,london).includes('ferry'));
+});
 test('reordering preserves booking identity and save/reload retains details',()=>{
   let p=updateConnection({title:'Test',stops},{fromId:'0',toId:'1',mode:'flight',details:{flight:{serviceNumber:'AA100'}}});
   p=reorderPlanStops(p,'1','2');assert.equal(connection(p,'0','2').details,undefined);

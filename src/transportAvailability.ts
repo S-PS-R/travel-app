@@ -25,5 +25,6 @@ export function availableTransports(from:Place,to:Place):Transport[] {
   const europe=landmass({city:"Paris",country:"France",countryId:"250",lat:48.8566,lon:2.3522});
   const britain=landmass({city:"London",country:"United Kingdom",countryId:"826",lat:51.5074,lon:-0.1278});
   const connected=a>=0&&b>=0&&(a===b||((a===britain&&b===europe)||(b===britain&&a===europe)));
+  if(a>=0&&a===b)return ["flight","train","car","bus","bicycle","walk"];
   return connected?["flight","train","car","bus","ferry","bicycle","walk"]:["flight","ferry"];
 }
