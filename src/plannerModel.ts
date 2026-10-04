@@ -1,5 +1,6 @@
 import type { Place } from "./model";
 import { isFlightRecord, type FlightRecord } from "./flightModel.ts";
+import { isAutoDraft, type AutoDraft } from './autoPlan.ts';
 
 export const transports = {
   flight: { label: "Flight", icon: "✈", color: "#ffc98b" },
@@ -14,10 +15,11 @@ export type Transport = keyof typeof transports;
 export type PlanStop = { id: string; place: Place; mode: Transport; incomingFlight?:FlightRecord };
 export type TransportDetails = { operator?: string; serviceNumber?: string; departureDate?: string; departureTime?: string; fromStation?: string; toStation?: string; notes?: string };
 export type TravelLeg = { fromId: string; toId: string; mode: Transport; details?: Partial<Record<Transport, TransportDetails>>; flight?:FlightRecord };
-export type TravelPlan = { title: string; stops: PlanStop[]; startDate?: string; endDate?: string; legs?: TravelLeg[] };
+export type TravelPlan = { title: string; stops: PlanStop[]; startDate?: string; endDate?: string; legs?: TravelLeg[]; autoDraft?:AutoDraft };
 export const emptyPlan = (): TravelPlan => ({ title: "My next adventure", stops: [] });
 export function parsePlan(raw: string): TravelPlan {
   const p = JSON.parse(raw);
+  if(p?.autoDraft!==undefined&&!isAutoDraft(p.autoDraft))throw new Error('Invalid saved AI itinerary.');
   if (!p || typeof p.title !== "string" || !Array.isArray(p.stops) || p.stops.length > 50) throw new Error("This saved plan could not be read.");
   const ids = new Set();
   for (const stop of p.stops) {

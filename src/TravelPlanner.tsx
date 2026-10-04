@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { View, Text, ScrollView, Pressable, useWindowDimensions } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import {readPlans,writePlan,deletePlan,localPlans,importAccountPlans} from "./planStorage";
 import { places, uid, placeKey, type Place } from "./model";
 import { transports, emptyPlan, distanceKm, connection, updateConnection, reorderPlanStops, removePlanStop, storedLegs, mapRoute, type TravelPlan } from "./plannerModel";
 import { availableTransports } from "./transportAvailability";
@@ -11,9 +11,12 @@ import DestinationInput from "./DestinationInput";
 import DateField from "./DateField";
 import { Button, Field, useTheme } from "./ui";
 import WorldMap from "./WorldMap";
+import AutoPlanner from './AutoPlanner';
 
 export default function TravelPlanner({view,onNavigate,userId}:{view:"plan"|"upcoming";onNavigate:(view:"plan"|"upcoming")=>void;userId?:string}) {
-  const storageKey=userId?`${PLAN_LIBRARY_KEY}.${userId}`:PLAN_LIBRARY_KEY;
+  const [localCount,setLocalCount]=useState(0);
+  const [devicePlans,setDevicePlans]=useState<SavedPlan[]>([]);
+  const [loadAttempt,setLoadAttempt]=useState(0);
   const { s, colors } = useTheme();
   const compact = useWindowDimensions().width < 1050;
   const [plan, setPlan] = useState<TravelPlan>(emptyPlan);
@@ -34,15 +37,24 @@ export default function TravelPlanner({view,onNavigate,userId}:{view:"plan"|"upc
   const route=useMemo(()=>mapRoute(plan),[plan]);
   useEffect(() => {
     let alive = true;
-    AsyncStorage.getItem(storageKey).then(async raw => {
-      const data=loadPlanLibrary(raw,raw===null&&!userId?await AsyncStorage.getItem(LEGACY_PLAN_KEY):null);
+    setReady(false);setFailed(false);setMessage('');
+    readPlans(userId).then(async data => {
+      if(userId){
+        try{const local=await localPlans(userId);if(alive)setLocalCount(local.plans.filter(p=>!data.plans.some(c=>c.id===p.id)).length);}
+        catch{if(alive)setMessage('Cloud plans loaded, but older plans on this device could not be read. Local data has not been changed.');}
+        try{const guest=await localPlans();if(alive)setDevicePlans(guest.plans);}catch{ /* Keep unreadable device copies untouched. */ }
+      }
       if(alive) {setLibrary(data);if(data.plans[0]){setPlan(data.plans[0]);setEditingId(data.plans[0].id);}}
     })
-      .catch(() => { if (alive) { setFailed(true);setMessage("Your saved plan could not be loaded. Reopen the app to retry; the saved copy has not been changed."); } })
+      .catch(error => { if (alive) { setFailed(true);setMessage(error instanceof Error?error.message:'Your saved plans could not be loaded. Retry loading; saved copies have not been changed.'); } })
       .finally(() => { if (alive) setReady(true); });
     return () => { alive = false; };
-  }, []);
-  function change(next: TravelPlan) { setPlan(next); setDirty(true); setMessage(""); }
+  }, [userId,loadAttempt]);
+  function change(next: TravelPlan) {
+    // A changed route invalidates the earlier itinerary; applying a new draft is explicit.
+    if(next.autoDraft===plan.autoDraft&&JSON.stringify(next.stops)!==JSON.stringify(plan.stops))next={...next,autoDraft:undefined};
+    setPlan(next); setDirty(true); setMessage("");
+  }
   function add(place: Place) {
     if (!ready || failed || busy || plan.stops.length >= 50) return;
     change({ ...plan, stops: [...plan.stops, {id:uid(),place,mode:"flight"}] });
@@ -52,8 +64,8 @@ export default function TravelPlanner({view,onNavigate,userId}:{view:"plan"|"upc
     setBusy(true); setMessage("");
     try {
       const id=editingId??uid();const next=saveToLibrary(library,plan,id);
-      await AsyncStorage.setItem(storageKey, JSON.stringify(next));
-      setLibrary(next);setEditingId(id);setDirty(false);setMessage("Saved to Upcoming trips on this device.");
+      const saved=await writePlan(next.plans[0],next,userId);next.plans[0]=saved;
+      setLibrary(next);setEditingId(id);setDirty(false);setMessage(userId?"Saved to your account.":"Saved to Upcoming trips on this device.");
     }
     catch (error) { setMessage(error instanceof Error?error.message:"Could not save the plan. Your changes are still here; please try again."); }
     finally { setBusy(false); }
@@ -70,7 +82,7 @@ export default function TravelPlanner({view,onNavigate,userId}:{view:"plan"|"upc
     setBusy(true);setMessage("");
     try {
       const next:PlanLibrary={version:2,plans:library.plans.filter(p=>p.id!==id)};
-      await AsyncStorage.setItem(storageKey,JSON.stringify(next));setLibrary(next);setDeleteId(null);
+      await deletePlan(library.plans.find(p=>p.id===id)!,next,userId);setLibrary(next);setDeleteId(null);
       if(id===editingId){setEditingId(null);setPlan(emptyPlan());setDirty(false);setSelected(null);}
     }catch{setMessage("Could not remove this plan. Please try again.");}finally{setBusy(false);}
   }
@@ -81,13 +93,18 @@ export default function TravelPlanner({view,onNavigate,userId}:{view:"plan"|"upc
     const next=reorderPlanStops(plan,fromId,toId);if(next===plan)return;
     change(next);setOrderMessage(`${next.stops.find(s=>s.id===fromId)?.place.city} moved to stop ${next.stops.findIndex(s=>s.id===fromId)+1}.`);
   }
+  async function importLocal(){setBusy(true);try{const next=await importAccountPlans(userId!);setLibrary(next);setLocalCount(0);setMessage("Local account plans imported. Existing cloud copies were preserved.");}catch(e){setMessage(e instanceof Error?e.message:"Import failed.");}finally{setBusy(false);}}
+  const importPrompt=userId&&localCount>0&&<Button quiet disabled={!editable||dirty} onPress={importLocal}>Import {localCount} older plans from this device</Button>;
   const discardPrompt = pending&&<View style={[s.card,{gap:12}]}><Text style={s.body}>Your current plan has unsaved changes. Discard them to open {pending==="new"?"a new journey":pending.title}?</Text><Button danger disabled={busy} onPress={()=>openPlan(pending)}>Discard changes and continue</Button><Button quiet onPress={()=>setPending(null)}>Keep editing</Button></View>;
   if(view==="upcoming")return <ScrollView contentContainerStyle={{padding:compact?20:36,gap:24,maxWidth:1300,width:"100%",alignSelf:"center",paddingBottom:60}}>
-    <View style={[s.spread,{flexWrap:"wrap"}]}><View style={{gap:8}}><Text style={s.eyebrow}>SOMETHING TO LOOK FORWARD TO</Text><Text accessibilityRole="header" style={s.title}>Upcoming trips</Text><Text style={s.muted}>Your saved plans, ready to revisit. Dates can stay undecided. Stored on this device.</Text></View><Button disabled={!editable} onPress={()=>requestOpen("new")}>＋ Plan a new trip</Button></View>
+    <View style={[s.spread,{flexWrap:"wrap"}]}><View style={{gap:8}}><Text style={s.eyebrow}>SOMETHING TO LOOK FORWARD TO</Text><Text accessibilityRole="header" style={s.title}>Upcoming trips</Text><Text style={s.muted}>{userId?"Your saved plans, synced to your account. Reopen this page to load changes from other devices.":"Your saved plans, stored on this device. Sign in to save new plans to your account."}</Text></View><Button disabled={!editable} onPress={()=>requestOpen("new")}>＋ Plan a new trip</Button></View>
     {!!message&&<Text accessibilityRole="alert" style={failed?s.error:s.muted}>{message}</Text>}
+    {failed&&<Button onPress={()=>setLoadAttempt(n=>n+1)}>Retry loading plans</Button>}
     {!ready&&<Text style={s.muted}>Opening your plans…</Text>}
     {dirty&&<Button quiet onPress={()=>onNavigate("plan")}>Continue editing unsaved changes</Button>}
+    {importPrompt}
     {discardPrompt}
+    {!!userId&&devicePlans.length>0&&<View style={[s.card,{gap:12}]}><Text style={s.subtitle}>Plans saved before sign-in</Text><Text style={s.muted}>These copies belong to this browser address. Open one to review it, then Save plan to add a copy to your account. Originals stay on this device.</Text>{devicePlans.map(saved=><Button key={saved.id} quiet disabled={!editable||dirty} onPress={()=>{openPlan({...saved,id:uid(),cloudVersion:undefined});setDirty(true);setMessage('Recovered a device copy. Review it, then Save plan to add it to your account.');}}>Open device copy: {saved.title}</Button>)}{dirty&&<Text style={s.muted}>Save your current changes before opening a device copy.</Text>}</View>}
     {ready&&!failed&&!library.plans.length&&<View style={s.card}><Text style={s.subtitle}>Where will you go next?</Text><Text style={s.muted}>Add destinations in Plan a trip and choose Save plan. Your journeys will appear here.</Text></View>}
     {library.plans.map(saved=><View key={saved.id} style={[s.card,{gap:14}]}>
       <Text style={s.subtitle}>{saved.title}</Text><Text style={s.muted}>{saved.startDate||"Start date undecided"} → {saved.endDate||"End date undecided"}</Text>
@@ -100,9 +117,11 @@ export default function TravelPlanner({view,onNavigate,userId}:{view:"plan"|"upc
   return <ScrollView scrollEnabled={!dragging} contentContainerStyle={{padding:compact?20:36,gap:24,maxWidth:1600,width:"100%",alignSelf:"center",paddingBottom:60}} keyboardShouldPersistTaps="handled">
     <View style={[s.spread,{flexWrap:"wrap"}]}>
       <View style={{gap:8}}><Text style={s.eyebrow}>GO WHERE CURIOSITY TAKES YOU</Text><Text accessibilityRole="header" style={s.title}>A journey taking shape.</Text><Text style={s.muted}>Connect the places. Choose how you get there.</Text></View>
-      <View style={[s.row,{flexWrap:"wrap"}]}><Text style={s.muted}>{!ready?"Opening plan…":dirty?"Unsaved changes":editingId?"Saved on this device":"New plan"}</Text><Button disabled={!editable||!dirty} onPress={save}>{busy?"Saving…":"Save plan"}</Button><Button quiet disabled={!editable} onPress={()=>requestOpen("new")}>New plan</Button><Button quiet onPress={()=>onNavigate("upcoming")}>View upcoming trips</Button></View>
+      <View style={[s.row,{flexWrap:"wrap"}]}><Text style={s.muted}>{!ready?"Opening plan…":dirty?"Unsaved changes":editingId?(userId?"Saved to your account":"Saved on this device"):"New plan"}</Text><Button disabled={!editable||!dirty} onPress={save}>{busy?"Saving…":"Save plan"}</Button><Button quiet disabled={!editable} onPress={()=>requestOpen("new")}>New plan</Button><Button quiet onPress={()=>onNavigate("upcoming")}>View upcoming trips</Button></View>
     </View>
     {!!message&&<Text accessibilityRole="alert" style={failed?s.error:s.muted}>{message}</Text>}
+    {failed&&<Button onPress={()=>setLoadAttempt(n=>n+1)}>Retry loading plans</Button>}
+    {importPrompt}
     {discardPrompt}
     <View style={{flexDirection:compact?"column":"row",gap:24,alignItems:"stretch"}}>
       <View style={{flex:1,minWidth:0}}><WorldMap trips={[]} planner route={route} selected={selected} onSelect={p=>setSelected(placeKey(p))} onAddPlace={editable?add:undefined}/></View>
@@ -119,6 +138,7 @@ export default function TravelPlanner({view,onNavigate,userId}:{view:"plan"|"upc
         <Text style={[s.muted,{fontSize:12}]}>Route lines and distances are geographic previews. They do not check roads, service availability, fares, or travel times.</Text>
       </View>
     </View>
+    <AutoPlanner plan={plan} disabled={!editable} onApply={change}/>
     {!!plan.stops.length&&<>
       <View style={s.spread}><Text style={s.subtitle}>One stop leads to another.</Text><Button quiet disabled={!editable} onPress={()=>setConfirmClear(!confirmClear)}>Clear plan</Button></View>
       {confirmClear&&<View style={[s.card,s.spread,{flexWrap:"wrap"}]}><Text style={s.body}>Clear all stops from this draft?</Text><Button danger disabled={!editable} onPress={()=>{change(emptyPlan());setSelected(null);setConfirmClear(false);}}>Clear draft</Button><Button quiet onPress={()=>setConfirmClear(false)}>Keep plan</Button></View>}

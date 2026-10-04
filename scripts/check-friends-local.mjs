@@ -8,7 +8,7 @@ try {
  create schema auth; create table auth.users(id uuid primary key,email text,email_confirmed_at timestamptz,raw_user_meta_data jsonb);
  create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
  grant usage on schema auth,public to anon,authenticated; grant execute on function auth.uid() to anon,authenticated;`);
- for(const file of ['001_trips','002_account_isolation','003_friends'])await db.exec(await readFile(new URL(`../supabase/migrations/${file}.sql`,import.meta.url),'utf8'));
+ for(const file of ['001_trips','002_account_isolation','003_friends','004_cloud_plans'])await db.exec(await readFile(new URL(`../supabase/migrations/${file}.sql`,import.meta.url),'utf8'));
  const ids=['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','00000000-0000-4000-8000-000000000003'];
  for(let i=0;i<ids.length;i++)await db.query(`insert into auth.users values($1,$2,now(),'{"full_name":"Test traveler"}')`,[ids[i],`fixture${i}@gmail.com`]);
  const place={city:'London',country:'United Kingdom',countryId:'826',lat:51.5,lon:-.1};
@@ -41,5 +41,15 @@ try {
  await db.exec('reset role;set role anon');
  for(const sql of ['select * from public.friendships','select * from public.friend_map_pins()','select * from public.list_friends()',"select public.request_friend('fixture0@gmail.com')"])
   await assert.rejects(db.query(sql),/permission denied/);
+ await asUser(0);
+ await db.query('insert into public.plans(id,payload) values($1,$2)',['plan',JSON.stringify({id:'plan',title:'Private plan',stops:[]})]);
+ await asUser(1);assert.equal((await rows('select * from public.plans')).length,0);
+ await assert.rejects(db.query('insert into public.plans(user_id,id,payload) values($1,$2,$3)',[ids[0],'spoof',JSON.stringify({id:'spoof',title:'Spoof',stops:[]})]),/row-level security/);
+ assert.equal((await rows("update public.plans set revision=2 returning id")).length,0);
+ await asUser(0);assert.equal((await rows("update public.plans set revision=2 where revision=1 returning id")).length,1);
+ assert.equal((await rows("update public.plans set revision=3 where revision=1 returning id")).length,0,'stale writes rejected');
+ assert.equal((await rows("delete from public.plans where revision=1 returning id")).length,0,'stale deletes rejected');
+ await db.exec('reset role;set role anon');await assert.rejects(db.query('select * from public.plans'),/permission denied/);
+ console.log('PASS: cloud plan ownership, spoof denial and concurrent edits.');
  console.log('PASS: pending, accepted, outsider, anonymous, revocation, rate limit and private-trip isolation in local PostgreSQL.');
 }finally{await db.close();}

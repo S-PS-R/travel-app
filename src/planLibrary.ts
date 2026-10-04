@@ -1,6 +1,6 @@
 import { parsePlan, type TravelPlan } from "./plannerModel.ts";
 import { validDate } from "./model.ts";
-export type SavedPlan = TravelPlan & { id: string; updatedAt: string };
+export type SavedPlan = TravelPlan & { id: string; updatedAt: string; cloudVersion?:number };
 export type PlanLibrary = { version: 2; plans: SavedPlan[] };
 export const PLAN_LIBRARY_KEY = "veyfar.plans.v2";
 export const LEGACY_PLAN_KEY = "veyfar.planner.v1";
@@ -31,5 +31,5 @@ export function loadPlanLibrary(raw: string | null, legacy: string | null): Plan
 }
 export function saveToLibrary(library: PlanLibrary, plan: TravelPlan, id: string): PlanLibrary {
   const issue=planIssue(plan);if(issue)throw new Error(issue);
-  return {version:2,plans:[{...plan,title:plan.title.trim(),id,updatedAt:new Date().toISOString()},...library.plans.filter(p=>p.id!==id)]};
+  return {version:2,plans:[{...plan,title:plan.title.trim(),id,updatedAt:new Date().toISOString(),cloudVersion:library.plans.find(p=>p.id===id)?.cloudVersion},...library.plans.filter(p=>p.id!==id)]};
 }

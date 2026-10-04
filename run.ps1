@@ -1,6 +1,7 @@
 param([ValidateSet('start', 'stop')][string]$Action = 'start')
 
 $ErrorActionPreference = 'Stop'
+try { & (Join-Path $PSScriptRoot 'scripts\planner-host.ps1') -Action $Action } catch { Write-Warning 'Gemini planner could not start/stop. Manual trip planning remains available.' }
 try { & (Join-Path $PSScriptRoot 'scripts\flight-host.ps1') -Action $Action } catch { Write-Warning "Flight search could not start/stop: $($_.Exception.Message). The website can still run with manual flight details." }
 function Wait-Website {
     param([int]$Seconds = 120)
